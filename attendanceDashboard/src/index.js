@@ -1,3 +1,1020 @@
-export default (router) => {
-	router.get('/', (req, res) => res.send('Hello, World!'));
+module.exports = function registerEndpoint(router, { services }) {
+  const { ItemsService } = services;
+
+  const DEFAULT_SUMMARY = {
+    present: 0,
+    absent: 0,
+    weekOff: 0,
+    holiday: 0,
+    onDuty: 0,
+    workFromHome: 0,
+    halfDay: 0,
+    paidLeave: 0,
+    unpaidLeave: 0,
+    holidayPresent: 0,
+    weekoffPresent: 0,
+    earlyLeaving: 0,
+    lateComing: 0,
+    workingDayOT: 0,
+    weekOffOT: 0,
+    holidayOT: 0,
+    workFromHomeOT: 0,
+    totalPayableDays: 0,
+    totalDaysOfMonth: 0,
+  };
+
+  router.get("/", async (req, res) => {
+    try {
+      let filter = {};
+      if (req.query.filter) {
+        if (typeof req.query.filter === "string") {
+          try {
+            filter = JSON.parse(req.query.filter);
+          } catch (e) {}
+        } else if (typeof req.query.filter === "object") {
+          filter = req.query.filter;
+        }
+      }
+
+      const filterAnd = filter._and || filter.and || [];
+
+      const employeeId = filterAnd[1]?.employeeId?.id?._eq;
+      const tenantId = filterAnd[0]?.tenant?.tenantId?._eq;
+      const year = filterAnd[2]?.["year(date)"]?._eq;
+      const month = filterAnd[3]?.["month(date)"]?._eq;
+      const startDate = filterAnd[0]?.date?._gte || req.query.startDate;
+      const endDate = filterAnd[0]?.date?._lte || req.query.endDate;
+
+      const searchTerm = req.query.search || "";
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 50;
+      const offset = (page - 1) * limit;
+
+      if (!tenantId) {
+        return res.status(400).json({
+          error: "Missing required parameter",
+          message: "tenantId is required",
+        });
+      }
+
+      const attendanceCycleService = new ItemsService("attendanceCycle", {
+        schema: req.schema,
+        accountability: req.accountability,
+      });
+
+      const attendanceService = new ItemsService("attendance", {
+        schema: req.schema,
+        accountability: req.accountability,
+      });
+
+      const personalModuleService = new ItemsService("personalModule", {
+        schema: req.schema,
+        accountability: req.accountability,
+      });
+
+      const cycleSettings = await attendanceCycleService.readByQuery({
+        filter: { tenant: { tenantId: { _eq: tenantId } } },
+        fields: [
+          "startDate",
+          "endDate",
+          "fixedCycle",
+          "includeWeekoffs",
+          "includeHolidays",
+        ],
+        limit: 1,
+      });
+
+      if (!cycleSettings?.length) {
+        return res.status(400).json({
+          error: "Configuration error",
+          message: "No attendance cycle settings found for this tenant",
+        });
+      }
+
+      const {
+        startDate: cycleStartDay,
+        endDate: cycleEndDay,
+        fixedCycle,
+        includeWeekoffs,
+        includeHolidays,
+      } = cycleSettings[0];
+
+      if (!employeeId && !startDate && !endDate && !year && !month) {
+        return await getCurrentMonthAllEmployees(
+          req,
+          res,
+          attendanceService,
+          personalModuleService,
+          tenantId,
+          fixedCycle,
+          cycleStartDay,
+          cycleEndDay,
+          includeWeekoffs,
+          includeHolidays,
+          searchTerm,
+          page,
+          limit,
+          offset
+        );
+      } else if (!employeeId && startDate && endDate) {
+        return await getDateRangeAllEmployees(
+          req,
+          res,
+          attendanceService,
+          personalModuleService,
+          tenantId,
+          startDate,
+          endDate,
+          includeWeekoffs,
+          includeHolidays,
+          searchTerm,
+          page,
+          limit,
+          offset
+        );
+      } else if (employeeId && tenantId && year && !month) {
+        return await getYearlySummary(
+          req,
+          res,
+          attendanceService,
+          employeeId,
+          tenantId,
+          parseInt(year),
+          fixedCycle,
+          cycleStartDay,
+          cycleEndDay,
+          includeWeekoffs,
+          includeHolidays
+        );
+      } else if (employeeId && tenantId && year && month) {
+        return await getMonthlyDetailedAttendance(
+          req,
+          res,
+          attendanceService,
+          employeeId,
+          tenantId,
+          parseInt(year),
+          parseInt(month),
+          fixedCycle,
+          cycleStartDay,
+          cycleEndDay,
+          includeWeekoffs,
+          includeHolidays
+        );
+      } else {
+        return res.status(400).json({
+          error: "Invalid parameter combination",
+          message: "Please provide valid parameter combination",
+        });
+      }
+    } catch (error) {
+      return res.status(500).json({
+        error: "Internal server error",
+        message: error.message,
+        stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+      });
+    }
+  });
+
+  async function getCurrentMonthAllEmployees(
+    req,
+    res,
+    attendanceService,
+    personalModuleService,
+    tenantId,
+    fixedCycle,
+    cycleStartDay,
+    cycleEndDay,
+    includeWeekoffs,
+    includeHolidays,
+    searchTerm,
+    page,
+    limit,
+    offset
+  ) {
+    try {
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth() + 1;
+
+      const { startDate, endDate } = calculateDateRange(
+        currentYear,
+        currentMonth,
+        fixedCycle,
+        cycleStartDay,
+        cycleEndDay
+      );
+
+      let personalModuleFilter = {
+        _and: [
+          {
+            assignedUser: {
+              tenant: { tenantId: { _eq: tenantId } },
+            },
+          },
+        ],
+      };
+
+      if (searchTerm) {
+        personalModuleFilter._and.push({
+          _or: [
+            { employeeId: { _icontains: searchTerm } },
+            { assignedUser: { first_name: { _icontains: searchTerm } } },
+            { assignedUser: { last_name: { _icontains: searchTerm } } },
+          ],
+        });
+      }
+
+      const totalEmployeesResult = await personalModuleService.readByQuery({
+        filter: personalModuleFilter,
+        fields: ["id"],
+        limit: -1,
+      });
+
+      const totalEmployees = totalEmployeesResult.length;
+
+      const paginatedEmployees = await personalModuleService.readByQuery({
+        filter: personalModuleFilter,
+        fields: [
+          "id",
+          "employeeId",
+          "assignedUser.first_name",
+          "assignedUser.last_name",
+          "assignedDepartment.department_id.departmentName",
+          "assignedBranch.branch_id.branchName",
+        ],
+        limit: limit,
+        offset: offset,
+      });
+
+      const employeeIds = paginatedEmployees.map((emp) => emp.id);
+
+      if (employeeIds.length === 0) {
+        return res.json({
+          data: [],
+          meta: {
+            tenantId,
+            month: currentMonth,
+            year: currentYear,
+            cycleStartDate: startDate,
+            cycleEndDate: endDate,
+            cycleType: fixedCycle ? "Fixed Cycle" : "Custom Cycle",
+            totalEmployees: 0,
+            page,
+            limit,
+            totalPages: 0,
+            search: searchTerm,
+          },
+        });
+      }
+
+      const records = await attendanceService.readByQuery({
+        filter: {
+          _and: [
+            { date: { _between: [startDate, endDate] } },
+            { employeeId: { id: { _in: employeeIds } } },
+            { tenant: { tenantId: { _eq: tenantId } } },
+          ],
+        },
+        fields: [
+          "id",
+          "date",
+          "attendance",
+          "day",
+          "leaveType",
+          "overTime",
+          "lateBy",
+          "earlyDeparture",
+          "attendanceContext",
+          "employeeId.id",
+        ],
+        sort: ["date"],
+        limit: -1,
+      });
+
+      const employeeDetailsMap = {};
+      paginatedEmployees.forEach((emp) => {
+        employeeDetailsMap[emp.id] = {
+          employeeId: emp.employeeId,
+          firstName: emp.assignedUser?.first_name || "Unknown",
+          // Extract department and branch directly from the data
+          department:
+            emp.assignedDepartment?.department_id?.departmentName || "Finance",
+          branch: emp.assignedBranch?.branch_id?.branchName || "Bangalore",
+        };
+      });
+
+      const employeeRecords = {};
+
+      records.forEach((record) => {
+        const empId = record.employeeId?.id;
+        if (!empId) return;
+
+        if (!employeeRecords[empId]) {
+          employeeRecords[empId] = [];
+        }
+
+        employeeRecords[empId].push(record);
+      });
+
+      const employeeSummaries = [];
+
+      for (const empId of employeeIds) {
+        const empDetails = employeeDetailsMap[empId];
+        if (!empDetails) continue;
+
+        const empRecords = employeeRecords[empId] || [];
+        const summary = calculateAttendanceSummary(
+          empRecords,
+          includeWeekoffs,
+          includeHolidays
+        );
+
+        employeeSummaries.push({
+          employeeId: empId,
+          employeeCode: empDetails.employeeId,
+          firstName: empDetails.firstName,
+          department: empDetails.department,
+          branch: empDetails.branch,
+          month: currentMonth,
+          monthName: getMonthName(currentMonth),
+          year: currentYear,
+          cycleStartDate: startDate,
+          cycleEndDate: endDate,
+          cycleType: fixedCycle ? "Fixed Cycle" : "Custom Cycle",
+          ...summary,
+        });
+      }
+
+      return res.json({
+        data: employeeSummaries,
+        meta: {
+          tenantId,
+          month: currentMonth,
+          year: currentYear,
+          cycleStartDate: startDate,
+          cycleEndDate: endDate,
+          cycleType: fixedCycle ? "Fixed Cycle" : "Custom Cycle",
+          totalEmployees,
+          page,
+          limit,
+          totalPages: Math.ceil(totalEmployees / limit),
+          search: searchTerm,
+        },
+      });
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async function getDateRangeAllEmployees(
+    req,
+    res,
+    attendanceService,
+    personalModuleService,
+    tenantId,
+    startDate,
+    endDate,
+    includeWeekoffs,
+    includeHolidays,
+    searchTerm,
+    page,
+    limit,
+    offset
+  ) {
+    try {
+      let personalModuleFilter = {
+        _and: [
+          {
+            assignedUser: {
+              tenant: { tenantId: { _eq: tenantId } },
+            },
+          },
+        ],
+      };
+
+      if (searchTerm) {
+        personalModuleFilter._and.push({
+          _or: [
+            { employeeId: { _icontains: searchTerm } },
+            { assignedUser: { first_name: { _icontains: searchTerm } } },
+            { assignedUser: { last_name: { _icontains: searchTerm } } },
+          ],
+        });
+      }
+
+      const totalEmployeesResult = await personalModuleService.readByQuery({
+        filter: personalModuleFilter,
+        fields: ["id"],
+        limit: -1,
+      });
+
+      const totalEmployees = totalEmployeesResult.length;
+
+      const paginatedEmployees = await personalModuleService.readByQuery({
+        filter: personalModuleFilter,
+        fields: [
+          "id",
+          "employeeId",
+          "assignedUser.first_name",
+          "assignedUser.last_name",
+          "assignedDepartment.department_id.departmentName",
+          "assignedBranch.branch_id.branchName",
+        ],
+        limit: limit,
+        offset: offset,
+      });
+
+      const employeeIds = paginatedEmployees.map((emp) => emp.id);
+
+      if (employeeIds.length === 0) {
+        return res.json({
+          data: [],
+          meta: {
+            tenantId,
+            startDate,
+            endDate,
+            startMonth: new Date(startDate).getMonth() + 1,
+            startYear: new Date(startDate).getFullYear(),
+            endMonth: new Date(endDate).getMonth() + 1,
+            endYear: new Date(endDate).getFullYear(),
+            totalEmployees: 0,
+            page,
+            limit,
+            totalPages: 0,
+            search: searchTerm,
+          },
+        });
+      }
+
+      const records = await attendanceService.readByQuery({
+        filter: {
+          _and: [
+            { date: { _between: [startDate, endDate] } },
+            { employeeId: { id: { _in: employeeIds } } },
+            { tenant: { tenantId: { _eq: tenantId } } },
+          ],
+        },
+        fields: [
+          "id",
+          "date",
+          "attendance",
+          "day",
+          "leaveType",
+          "overTime",
+          "lateBy",
+          "earlyDeparture",
+          "attendanceContext",
+          "employeeId.id",
+        ],
+        sort: ["date"],
+        limit: -1,
+      });
+
+      const employeeDetailsMap = {};
+      paginatedEmployees.forEach((emp) => {
+        employeeDetailsMap[emp.id] = {
+          employeeId: emp.employeeId,
+          firstName: emp.assignedUser?.first_name || "Unknown",
+          // Extract department and branch directly from the data
+          department:
+            emp.assignedDepartment?.department_id?.departmentName || "Finance",
+          branch: emp.assignedBranch?.branch_id?.branchName || "Bangalore",
+        };
+      });
+
+      const employeeRecords = {};
+
+      records.forEach((record) => {
+        const empId = record.employeeId?.id;
+        if (!empId) return;
+
+        if (!employeeRecords[empId]) {
+          employeeRecords[empId] = [];
+        }
+
+        employeeRecords[empId].push(record);
+      });
+
+      const employeeSummaries = [];
+
+      for (const empId of employeeIds) {
+        const empDetails = employeeDetailsMap[empId];
+        if (!empDetails) continue;
+
+        const empRecords = employeeRecords[empId] || [];
+        const summary = calculateAttendanceSummary(
+          empRecords,
+          includeWeekoffs,
+          includeHolidays
+        );
+
+        employeeSummaries.push({
+          employeeId: empId,
+          employeeCode: empDetails.employeeId,
+          firstName: empDetails.firstName,
+          department: empDetails.department,
+          branch: empDetails.branch,
+          ...summary,
+        });
+      }
+
+      const startDateObj = new Date(startDate);
+      const endDateObj = new Date(endDate);
+
+      return res.json({
+        data: employeeSummaries,
+        meta: {
+          tenantId,
+          startDate,
+          endDate,
+          startMonth: startDateObj.getMonth() + 1,
+          startYear: startDateObj.getFullYear(),
+          endMonth: endDateObj.getMonth() + 1,
+          endYear: endDateObj.getFullYear(),
+          totalEmployees,
+          page,
+          limit,
+          totalPages: Math.ceil(totalEmployees / limit),
+          search: searchTerm,
+        },
+      });
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async function getYearlySummary(
+    req,
+    res,
+    attendanceService,
+    employeeId,
+    tenantId,
+    year,
+    fixedCycle,
+    cycleStartDay,
+    cycleEndDay,
+    includeWeekoffs,
+    includeHolidays
+  ) {
+    try {
+      const monthlySummaries = [];
+
+      for (let month = 1; month <= 12; month++) {
+        const { startDate, endDate } = calculateDateRange(
+          year,
+          month,
+          fixedCycle,
+          cycleStartDay,
+          cycleEndDay
+        );
+
+        const records = await attendanceService.readByQuery({
+          filter: {
+            _and: [
+              { date: { _between: [startDate, endDate] } },
+              { employeeId: { id: { _eq: employeeId } } },
+              { tenant: { tenantId: { _eq: tenantId } } },
+            ],
+          },
+          fields: [
+            "id",
+            "date",
+            "attendance",
+            "day",
+            "leaveType",
+            "overTime",
+            "lateBy",
+            "earlyDeparture",
+            "attendanceContext",
+          ],
+          sort: ["date"],
+          limit: -1,
+        });
+
+        const monthlySummary = calculateAttendanceSummary(
+          records,
+          includeWeekoffs,
+          includeHolidays
+        );
+
+        monthlySummaries.push({
+          month,
+          monthName: getMonthName(month),
+          year,
+          cycleStartDate: startDate,
+          cycleEndDate: endDate,
+          cycleType: fixedCycle ? "Fixed Cycle" : "Custom Cycle",
+          ...monthlySummary,
+        });
+      }
+
+      return res.json({
+        data: monthlySummaries,
+        meta: {
+          employeeId,
+          tenantId,
+          year,
+          cycleType: fixedCycle ? "Fixed Cycle" : "Custom Cycle",
+          totalMonths: monthlySummaries.length,
+          includeWeekoffs,
+          includeHolidays,
+        },
+      });
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async function getMonthlyDetailedAttendance(
+    req,
+    res,
+    attendanceService,
+    employeeId,
+    tenantId,
+    year,
+    month,
+    fixedCycle,
+    cycleStartDay,
+    cycleEndDay,
+    includeWeekoffs,
+    includeHolidays
+  ) {
+    try {
+      const { startDate, endDate } = calculateDateRange(
+        year,
+        month,
+        fixedCycle,
+        cycleStartDay,
+        cycleEndDay
+      );
+
+      const records = await attendanceService.readByQuery({
+        filter: {
+          _and: [
+            { date: { _between: [startDate, endDate] } },
+            { employeeId: { id: { _eq: employeeId } } },
+            { tenant: { tenantId: { _eq: tenantId } } },
+          ],
+        },
+        fields: [
+          "id",
+          "date",
+          "attendance",
+          "day",
+          "leaveType",
+          "overTime",
+          "breakTime",
+          "lateBy",
+          "earlyDeparture",
+          "workHours",
+          "attendanceContext",
+        ],
+        sort: ["date"],
+        limit: -1,
+      });
+
+      const allDates = getAllDatesInRange(startDate, endDate);
+
+      const dailyAttendance = allDates.map((date) => {
+        const dateStr = date.toISOString().split("T")[0];
+        const record = records.find((r) => r.date === dateStr);
+
+        if (record) {
+          return {
+            date: dateStr,
+            attendance: record.attendance,
+          };
+        } else {
+          return {
+            date: dateStr,
+            attendance: "noRecord",
+          };
+        }
+      });
+
+      const monthlySummary = calculateAttendanceSummary(
+        records,
+        includeWeekoffs,
+        includeHolidays
+      );
+
+      return res.json({
+        data: {
+          summary: {
+            month,
+            monthName: getMonthName(month),
+            year,
+            cycleStartDate: startDate,
+            cycleEndDate: endDate,
+            cycleType: fixedCycle ? "Fixed Cycle" : "Custom Cycle",
+            ...monthlySummary,
+          },
+          dailyRecords: dailyAttendance,
+        },
+        meta: {
+          employeeId,
+          tenantId,
+          year,
+          month,
+          cycleType: fixedCycle ? "Fixed Cycle" : "Custom Cycle",
+          totalDays: dailyAttendance.length,
+          includeWeekoffs,
+          includeHolidays,
+        },
+      });
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  function calculateDateRange(
+    year,
+    month,
+    fixedCycle,
+    cycleStartDay,
+    cycleEndDay
+  ) {
+    let startDate, endDate;
+
+    if (fixedCycle) {
+      startDate = new Date(year, month - 1, 1);
+      endDate = new Date(year, month, 0);
+    } else {
+      const prevMonth = month === 1 ? 12 : month - 1;
+      const prevMonthYear = month === 1 ? year - 1 : year;
+
+      startDate = new Date(prevMonthYear, prevMonth - 1, cycleStartDay);
+      endDate = new Date(year, month - 1, cycleEndDay);
+    }
+
+    return {
+      startDate: startDate.toISOString().split("T")[0],
+      endDate: endDate.toISOString().split("T")[0],
+    };
+  }
+
+  function calculateAttendanceSummary(
+    records,
+    includeWeekoffs,
+    includeHolidays
+  ) {
+    const summary = { ...DEFAULT_SUMMARY };
+
+    records.forEach((record) => {
+      let dayValue =
+        record.day && !isNaN(record.day) ? parseFloat(record.day) : 0;
+
+      let considerableDay = dayValue;
+      if (dayValue === 0.75) {
+        considerableDay = 1.0;
+      } else if (dayValue > 1) {
+        considerableDay = 1.0;
+      }
+
+      if (record.attendanceContext) {
+        const context = record.attendanceContext.toLowerCase();
+
+        if (context.includes("¼cl½p") || context.includes("1/4cl1/2p")) {
+          summary.present += 0.5;
+          summary.absent += 0.25;
+          summary.paidLeave += 0.25;
+        } else if (context.includes("¼clp") || context.includes("1/4clp")) {
+          summary.present += 1.0;
+          summary.paidLeave += 0.25;
+        } else if (context.includes("¼plp") || context.includes("1/4plp")) {
+          summary.present += 1.0;
+          summary.paidLeave += 0.25;
+        } else if (context.includes("¼sl½p") || context.includes("1/4sl1/2p")) {
+          summary.present += 0.5;
+          summary.absent += 0.25;
+          summary.paidLeave += 0.25;
+        } else if (context.includes("¼slp") || context.includes("1/4slp")) {
+          summary.present += 1.0;
+          summary.paidLeave += 0.25;
+        } else if (context.includes("½p") || context.includes("1/2p")) {
+          if (
+            context.includes("due to continous late") ||
+            context.includes("(od)")
+          ) {
+            summary.present += 0.5;
+            summary.absent += 0.5;
+          } else {
+            summary.halfDay += 1.0;
+            summary.present += 0.5;
+            summary.absent += 0.5;
+          }
+        } else if (context.includes("½pl") || context.includes("1/2pl")) {
+          summary.paidLeave += 0.5;
+        } else if (context.includes("½cl½p") || context.includes("1/2cl1/2p")) {
+          summary.present += 0.5;
+          summary.paidLeave += 0.5;
+        } else if (context.includes("½clp") || context.includes("1/2clp")) {
+          summary.present += 1.0;
+          summary.paidLeave += 0.5;
+        } else if (context.includes("½pl½p") || context.includes("1/2pl1/2p")) {
+          summary.present += 0.5;
+          summary.paidLeave += 0.5;
+        } else if (context.includes("½plp") || context.includes("1/2plp")) {
+          summary.present += 1.0;
+          summary.paidLeave += 0.5;
+        } else if (context.includes("½sl½p") || context.includes("1/2sl1/2p")) {
+          summary.present += 0.5;
+          summary.paidLeave += 0.5;
+        } else if (context.includes("½slp") || context.includes("1/2slp")) {
+          summary.present += 1.0;
+          summary.paidLeave += 0.5;
+        } else if (context.includes("¾cl") || context.includes("3/4cl")) {
+          summary.paidLeave += 0.75;
+        } else if (context.includes("¾slp") || context.includes("3/4slp")) {
+          summary.present += 1.0;
+          summary.paidLeave += 0.75;
+        } else if (context.includes("cl½p") || context.includes("cl1/2p")) {
+          summary.present += 0.5;
+          summary.paidLeave += 1.0;
+        } else if (context.includes("clp") && !context.includes("(od)")) {
+          summary.paidLeave += 1.0;
+        } else if (context.includes("pl")) {
+          summary.paidLeave += 1.0;
+        } else if (context.includes("sl")) {
+          summary.paidLeave += 1.0;
+        } else if (context.includes("wo½p") || context.includes("wo1/2p")) {
+          summary.weekoffPresent += 0.5;
+        } else if (context.includes("wop")) {
+          summary.weekoffPresent += 1.0;
+        } else if (context.includes("present") && !context.includes("leave")) {
+          summary.present += 1.0;
+        } else if (context.includes("absent")) {
+          summary.absent += 1.0;
+        } else if (
+          context.includes("weeklyoff") ||
+          context.includes("weekoff")
+        ) {
+          summary.weekOff += 1.0;
+        } else if (context.includes("holiday")) {
+          if (context.includes("present")) {
+            summary.holidayPresent += 1.0;
+          } else {
+            summary.holiday += 1.0;
+          }
+        } else if (
+          context.includes("workfromhome") ||
+          context.includes("wfh")
+        ) {
+          summary.workFromHome += 1.0;
+        } else if (context.includes("on leave") || context.includes("leave")) {
+          if (context.includes("cl") || context.includes("casual")) {
+            summary.paidLeave += dayValue;
+          } else if (context.includes("sl") || context.includes("sick")) {
+            summary.paidLeave += dayValue;
+          } else if (context.includes("pl") || context.includes("privilege")) {
+            summary.paidLeave += dayValue;
+          } else {
+            summary.paidLeave += dayValue;
+          }
+        }
+      } else {
+        switch (record.attendance) {
+          case "present":
+            summary.present += dayValue;
+            break;
+          case "absent":
+            summary.absent += dayValue;
+            break;
+          case "weekOff":
+            summary.weekOff += dayValue;
+            break;
+          case "holiday":
+            summary.holiday += dayValue;
+            break;
+          case "onDuty":
+            summary.onDuty += dayValue;
+            break;
+          case "workFromHome":
+            summary.workFromHome += dayValue;
+            break;
+          case "halfDay":
+            summary.halfDay += dayValue;
+            summary.present += dayValue;
+            summary.absent += 1 - dayValue;
+            break;
+          case "paidLeave":
+            summary.paidLeave += dayValue;
+            break;
+          case "unpaidLeave":
+            summary.unpaidLeave += dayValue;
+            break;
+          case "holidayPresent":
+            summary.holidayPresent += dayValue;
+            break;
+          case "weekoffPresent":
+            summary.weekoffPresent += dayValue;
+            break;
+        }
+      }
+
+      if (record.earlyDeparture && record.earlyDeparture !== "00:00:00") {
+        summary.earlyLeaving += 1;
+      }
+      if (record.lateBy && record.lateBy !== "00:00:00") {
+        summary.lateComing += 1;
+      }
+
+      if (record.overTime && record.overTime !== "00:00:00") {
+        switch (record.attendance) {
+          case "present":
+            summary.workingDayOT += 1;
+            break;
+          case "weekOff":
+          case "weekoffPresent":
+            summary.weekOffOT += 1;
+            break;
+          case "holiday":
+          case "holidayPresent":
+            summary.holidayOT += 1;
+            break;
+          case "workFromHome":
+            summary.workFromHomeOT += 1;
+            break;
+        }
+      }
+
+      let payableDay = considerableDay;
+
+      if (
+        includeWeekoffs &&
+        (record.attendance === "weekOff" ||
+          record.attendance === "weekoffPresent")
+      ) {
+        payableDay = considerableDay;
+      } else if (
+        includeHolidays &&
+        (record.attendance === "holiday" ||
+          record.attendance === "holidayPresent")
+      ) {
+        payableDay = considerableDay;
+      } else if (
+        record.attendance === "absent" ||
+        record.attendance === "unpaidLeave"
+      ) {
+        payableDay = 0;
+      } else if (record.attendance === "paidLeave") {
+        payableDay = considerableDay;
+      }
+
+      summary.totalPayableDays += payableDay;
+      summary.totalDaysOfMonth += considerableDay;
+    });
+
+    if (records.length > 0) {
+      const firstRecordDate = new Date(records[0].date);
+      const year = firstRecordDate.getFullYear();
+      const month = firstRecordDate.getMonth() + 1;
+
+      const totalDaysInMonth = new Date(year, month, 0).getDate();
+      summary.totalDaysOfMonth = totalDaysInMonth;
+    } else {
+      const now = new Date();
+      const totalDaysInMonth = new Date(
+        now.getFullYear(),
+        now.getMonth() + 1,
+        0
+      ).getDate();
+      summary.totalDaysOfMonth = totalDaysInMonth;
+    }
+
+    return summary;
+  }
+
+  function getAllDatesInRange(startDateStr, endDateStr) {
+    const dates = [];
+    const startDate = new Date(startDateStr);
+    const endDate = new Date(endDateStr);
+
+    let currentDate = new Date(startDate);
+
+    while (currentDate <= endDate) {
+      dates.push(new Date(currentDate));
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    return dates;
+  }
+  function getMonthName(monthNumber) {
+    const months = [
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December",
+    ];
+    return months[monthNumber - 1];
+  }
 };
