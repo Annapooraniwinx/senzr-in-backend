@@ -728,6 +728,7 @@ module.exports = function registerEndpoint(router, { services }) {
           "outTime",
           "inTime",
           "action",
+          "mode",
         ],
         sort: ["date"],
         limit: -1,
@@ -757,6 +758,7 @@ module.exports = function registerEndpoint(router, { services }) {
             outTime: record.outTime,
             inTime: record.inTime,
             action: record.action,
+            mode: record.mode,
           };
         } else {
           return {
@@ -776,6 +778,7 @@ module.exports = function registerEndpoint(router, { services }) {
             outTime: null,
             inTime: null,
             action: null,
+            mode: null,
           };
         }
       });
@@ -1061,10 +1064,12 @@ module.exports = function registerEndpoint(router, { services }) {
           summary.present += 1.0;
         } else if (context === "Absent" || context === "A") {
           if (record.attendance === "unPaidLeave") {
-            summary.unPaidLeave += dayValue;
+            summary.unPaidLeave += 1.0;
           } else {
-            summary.absent += dayValue;
+            summary.absent += 1.0;
           }
+        } else if (context === "UnPaid Leave") {
+          summary.unPaidLeave += 1.0;
         } else if (context === "WeeklyOff" || context === "WO") {
           summary.weekOff += dayValue;
         } else if (context === "Holiday") {
