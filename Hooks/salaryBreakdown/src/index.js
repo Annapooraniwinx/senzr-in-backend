@@ -52,8 +52,9 @@ export default ({ action }, { services }) => {
       monthlyCtcs,
       salarySetting
     );
-    updateSalaryBreakdown(
-      salaryRows,
+
+    await updateSalaryBreakdown(
+      personalRows,
       monthlyCtcs,
       salaryBreakdown,
       ItemsService,
@@ -62,7 +63,6 @@ export default ({ action }, { services }) => {
       schema
     );
   };
-
   const handlePersonalModuleUpdate = async (event, { database }) => {
     const personalModuleId = event.keys?.[0];
 
@@ -663,70 +663,74 @@ const updateSalaryBreakdown = async (
   salaryBreakdown,
   ItemsService,
   database,
-  id,
+  salaryBreakdownIds,
   schema
 ) => {
   const salaryService = new ItemsService("SalaryBreakdown", {
     knex: database,
     schema: schema,
   });
-  console.log("🔍 Service schema :", database.schema);
-  console.log("🔍 Service schema collections:", database.schema.collections);
+
   console.log(
-    "🔍 Service methods:",
-    Object.getOwnPropertyNames(Object.getPrototypeOf(salaryService))
+    "🔍 Starting salary breakdown update for",
+    salaryRows.length,
+    "records"
   );
 
+  // Process in batches like your working code
   for (let i = 0; i < salaryRows.length; i += 100) {
-    const batch = salaryRows.slice(i, i + 100);
+    const batchIds = salaryBreakdownIds
+      .slice(i, i + 100)
+      .filter((id) => id !== null);
 
-    const updateDataArray = batch.map((person, index) => {
-      const actualIndex = i + index;
+    if (batchIds.length === 0) {
+      console.warn(`⚠️ No valid IDs in batch ${i / 100 + 1}`);
+      continue;
+    }
 
-      return {
-        id: person.id,
-
-        basicPay: "0.00",
-        netSalary: "0.00",
-        totalEarnings: "0.00",
-        ctc: "0.00",
-
-        professionalTax: "0.00",
-        totalDeductions: "0.00",
-        employerLwf: person.allowPF ? 40 : 0,
-        employeeLwf: person.allowPF ? 20 : 0,
-      };
-    });
+    // Create update data object (same for all records in batch)
+    const updateData = {
+      basicPay: "0.00",
+      netSalary: "0.00",
+      totalEarnings: "0.00",
+      ctc: "0.00",
+      professionalTax: "0.00",
+      totalDeductions: "0.00",
+      employerLwf: 40,
+      employeeLwf: 20,
+    };
 
     console.log(
       `📦 Attempting batch update ${i / 100 + 1} with ${
-        updateDataArray.length
+        batchIds.length
       } records`
     );
-    console.log(
-      "🔎 Payload sent to updateMany:",
-      JSON.stringify(updateDataArray, null, 2)
-    );
+    console.log(`🔄 Updating records batch: ${batchIds.join(", ")}`);
 
     try {
-      const result = await salaryService.updateMany(updateDataArray);
-      console.log(`✅ Batch ${i / 100 + 1} update successful`, result);
-    } catch (error) {
-      console.error(`❌ Batch ${i / 100 + 1} failed`);
-      console.error(
-        "🛑 Failed Payload:",
-        JSON.stringify(updateDataArray, null, 2)
+      // Use the same pattern as your working code: updateMany(ids, data, options)
+      await salaryService.updateMany(batchIds, updateData, {
+        emitEvents: false,
+      });
+
+      console.log(
+        `✅ Updated ${batchIds.length} salary records in batch ${i / 100 + 1}`
       );
-      console.error("🔐 Error stack:", error);
-      //  for (const record of updateDataArray) {
-      //   try {
-      //     await salaryService.updateOne(record.id, record);
-      //     console.log(`✅ Record ${record.id} updated individually`);
-      //   } catch (err) {
-      //     console.error(`❌ Record ${record.id} failed individually`);
-      //     console.error("⛔ Error:", err.message || err);
-      //   }
-      // }
+    } catch (error) {
+      console.error(
+        `❌ Batch ${i / 100 + 1} failed, falling back to individual updates`
+      );
+      console.error("🛑 Batch error:", error.message);
+
+      // Fallback to individual updates
+      for (const id of batchIds) {
+        try {
+          await salaryService.updateOne(id, updateData);
+          console.log(`✅ Record ${id} updated individually`);
+        } catch (err) {
+          console.error(`❌ Record ${id} failed individually:`, err.message);
+        }
+      }
     }
   }
 };

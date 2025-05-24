@@ -1,5 +1,5 @@
 {
-	"name": "salaryBreakdown",
+	"name": "rfid",
 	"description": "Please enter a description for your extension",
 	"icon": "extension",
 	"version": "1.0.0",
@@ -26,8 +26,5 @@
 	},
 	"devDependencies": {
 		"@directus/extensions-sdk": "13.1.0"
-	},
-	"dependencies": {
-		"@directus/sdk": "^19.1.0"
 	}
 }
