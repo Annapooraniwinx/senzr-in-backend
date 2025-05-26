@@ -663,13 +663,7 @@ module.exports = function registerEndpoint(router, { services }) {
                 startDate: { _between: [startDate, endDate] },
                 employee: { id: { _eq: employeeId } },
               },
-              fields: [
-                "id",
-                "employee",
-                "lockedPaidUsers",
-                "startDate",
-                "endDate",
-              ],
+              fields: ["id", "employee", "salaryPaid", "startDate", "endDate"],
             });
 
           if (
@@ -677,12 +671,26 @@ module.exports = function registerEndpoint(router, { services }) {
             payrollVerificationRecords.length > 0
           ) {
             const payrollRecord = payrollVerificationRecords.find(
-              (record) => record.lockedPaidUsers === true
+              (record) => record.salaryPaid === "paid"
             );
 
             if (payrollRecord) {
               lockedMonthAttendance = true;
-              console.log("Found locked payroll record:", payrollRecord);
+              console.log(
+                "Found paid salary record - locking attendance:",
+                payrollRecord
+              );
+            } else {
+              const unpaidRecord = payrollVerificationRecords.find(
+                (record) => record.salaryPaid === "unpaid"
+              );
+              if (unpaidRecord) {
+                lockedMonthAttendance = false;
+                console.log(
+                  "Found unpaid salary record - attendance unlocked:",
+                  unpaidRecord
+                );
+              }
             }
           } else {
             console.log("No payroll verification records found");
