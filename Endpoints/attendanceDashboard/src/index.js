@@ -900,12 +900,23 @@ module.exports = function registerEndpoint(router, { services }) {
     }
 
     records.forEach((record) => {
+      if (record.attendanceContext === "Holiday") {
+        summary.holiday += 1;
+        const payableDay = includeHolidays ? 1 : 0;
+        summary.totalPayableDays += payableDay;
+        return;
+      }
+
       if (record.attendanceContext === "WeeklyOff") {
         summary.weekOff += 1;
-      } else if (record.attendanceContext === "Holiday") {
-        summary.holiday += 1;
-      } else if (record.attendanceContext === "Unpaid Leave") {
+        const payableDay = includeWeekoffs ? 1 : 0;
+        summary.totalPayableDays += payableDay;
+        return;
+      }
+
+      if (record.attendanceContext === "Unpaid Leave") {
         summary.unPaidLeave += 1;
+        return;
       }
 
       let dayValue =
@@ -950,14 +961,20 @@ module.exports = function registerEndpoint(router, { services }) {
           summary.paidLeave += 0.25;
           record.leaveType = record.leaveType || "sickLeave";
         } else if (context === "1/2Present" || context === "1/2P") {
-          {
-            summary.halfDay += 0.5;
-            summary.absent += 0.5;
-          }
+          summary.halfDay += 0.5;
+          summary.absent += 0.5;
         } else if (context === "On Leave(1/2PL)" || context === "1/2PL") {
           summary.paidLeave += 0.5;
           summary.absent += 0.5;
           record.leaveType = record.leaveType || "privilegeLeave";
+        } else if (
+          context === "On Leave(½CL)" ||
+          context === "On Leave(1/2CL)" ||
+          context === "1/2CL"
+        ) {
+          summary.paidLeave += 0.5;
+          summary.present += 0.5;
+          record.leaveType = record.leaveType || "casualLeave";
         } else if (
           context === "1/2Present On Leave(1/2CL)" ||
           context === "1/2CL1/2P"
@@ -1078,18 +1095,12 @@ module.exports = function registerEndpoint(router, { services }) {
           }
         } else if (context === "UnPaid Leave") {
           summary.unPaidLeave += 1.0;
-        } else if (context === "WeeklyOff" || context === "WO") {
-          summary.weekOff += dayValue;
-        } else if (context === "Holiday") {
-          summary.holiday += dayValue;
         } else if (context === "HolidayPresent") {
           summary.holidayPresent += dayValue;
         } else if (context === "WorkFromHome" || context === "WFH") {
           summary.workFromHome += dayValue;
         } else if (context === "Present On OD" || context === "P(OD)") {
           summary.onDuty += dayValue;
-        } else if (context === "UnPaid Leave") {
-          summary.unPaidLeave += dayValue;
         } else if (context.includes("On Leave")) {
           if (context.includes("CL") || context.includes("Casual")) {
             summary.paidLeave += dayValue;
@@ -1115,10 +1126,10 @@ module.exports = function registerEndpoint(router, { services }) {
               summary.absent += dayValue;
               break;
             case "weekOff":
-              summary.weekOff += dayValue;
+              summary.weekOff += 1;
               break;
             case "holiday":
-              summary.holiday += dayValue;
+              summary.holiday += 1;
               break;
             case "onDuty":
               summary.onDuty += dayValue;
@@ -1154,10 +1165,10 @@ module.exports = function registerEndpoint(router, { services }) {
             summary.absent += dayValue;
             break;
           case "weekOff":
-            summary.weekOff += dayValue;
+            summary.weekOff += 1;
             break;
           case "holiday":
-            summary.holiday += dayValue;
+            summary.holiday += 1;
             break;
           case "onDuty":
             summary.onDuty += dayValue;
@@ -1191,8 +1202,6 @@ module.exports = function registerEndpoint(router, { services }) {
       if (record.lateBy && record.lateBy !== "00:00:00") {
         summary.lateComing += 1;
       }
-
-      // Update OT counting logic
       if (record.overTime && record.overTime !== "00:00:00") {
         const context = record.attendanceContext
           ? record.attendanceContext
@@ -1229,27 +1238,27 @@ module.exports = function registerEndpoint(router, { services }) {
         }
       }
 
-      // Calculate payable days based on the logic from the first file
-      let payableDay = 0;
-
-      // First, calculate the base payable day value
+      // Calculate payable days for non-holiday/weekoff records
       if (
-        record.attendance === "present" ||
-        record.attendance === "onDuty" ||
-        record.attendance === "workFromHome" ||
-        record.attendance === "paidLeave" ||
-        record.attendance === "halfDay" ||
-        record.attendance === "holidayPresent" ||
-        record.attendance === "weekoffPresent"
+        record.attendanceContext !== "Holiday" &&
+        record.attendanceContext !== "WeeklyOff"
       ) {
-        payableDay = dayValue;
-      } else if (record.attendance === "weekOff") {
-        payableDay = includeWeekoffs ? 1 : 0;
-      } else if (record.attendance === "holiday") {
-        payableDay = includeHolidays ? 1 : 0;
-      }
+        let payableDay = 0;
 
-      summary.totalPayableDays += payableDay;
+        if (
+          record.attendance === "present" ||
+          record.attendance === "onDuty" ||
+          record.attendance === "workFromHome" ||
+          record.attendance === "paidLeave" ||
+          record.attendance === "halfDay" ||
+          record.attendance === "holidayPresent" ||
+          record.attendance === "weekoffPresent"
+        ) {
+          payableDay = dayValue;
+        }
+
+        summary.totalPayableDays += payableDay;
+      }
     });
 
     return summary;
