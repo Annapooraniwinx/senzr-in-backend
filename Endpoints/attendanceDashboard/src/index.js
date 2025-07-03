@@ -973,7 +973,7 @@ module.exports = function registerEndpoint(router, { services }) {
           context === "1/2CL"
         ) {
           summary.paidLeave += 0.5;
-          summary.present += 0.5;
+          summary.absent += 0.5;
           record.leaveType = record.leaveType || "casualLeave";
         } else if (
           context === "1/2Present On Leave(1/2CL)" ||
