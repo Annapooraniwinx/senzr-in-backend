@@ -375,10 +375,10 @@ export default ({ action }, { services }) => {
     );
   };
 
-  // action("salarySetting.items.update", handleSalarySettingChange);
-  // action("salarySetting.items.delete", handleSalarySettingChange);
-  // action("personalModule.items.update", handlePersonalModuleUpdate);
-  // action("SalaryBreakdown.items.update", handleSalaryBreakdownUpdate);
+  action("salarySetting.items.update", handleSalarySettingChange);
+  action("salarySetting.items.delete", handleSalarySettingChange);
+  action("personalModule.items.update", handlePersonalModuleUpdate);
+  action("SalaryBreakdown.items.update", handleSalaryBreakdownUpdate);
   // action("payrollVerification.items.update", payrollVerification);
 };
 // const getFrequency = (frequency) => {

@@ -123,6 +123,10 @@ var src = function registerEndpoint(router, { services }) {
           "config.attendancePolicies.workingHoursType",
           "config.attendancePolicies.workinghrsDaysLimit",
           "config.attendancePolicies.wrkHoursDayMode",
+          "config.attendancePolicies.earlyExitPenaltyAmt",
+          "config.attendancePolicy.extraHoursPay ",
+          "config.attendancePolicy.weekOffPay",
+          "config.attendancePolicy.publicHolidayPay",
           "config.attendanceSettings",
         ],
         sort: ["-date_updated"],
@@ -220,6 +224,7 @@ var src = function registerEndpoint(router, { services }) {
         const basicPay = Number(salaryInfo?.basicPay || 0);
         const adjustedBasicPay = (basicPay / Number(totalDays)) * payableDays;
         const stateTax = personal?.salaryConfig?.stateTaxes?.stateTaxRules;
+        const monthlyCTC = salaryInfo?.basicSalary;
 
         const adjustedEarnings = {};
         for (const key in earnings) {
@@ -345,34 +350,6 @@ var src = function registerEndpoint(router, { services }) {
         });
         const employerLwf = lwfApplicable ? stateTax?.LWF?.EmployerLWF : 0;
         const employeeLwf = lwfApplicable ? stateTax?.LWF?.EmployeeLWF : 0;
-
-        const endMonth = new Date(endDate).getMonth() + 1;
-        let pt = 0;
-        if (stateTax?.PtMonth?.Month == endMonth) {
-          pt = stateTax.PtMonth.professionalTax;
-        } else {
-          const userGender = personal?.assignedUser?.gender;
-          const salary = salaryInfo?.basicSalary || 0;
-          const matchedPT = (stateTax?.PT || []).find(
-            ({ salaryRange, gender }) => {
-              if (gender) {
-                if (!userGender) return false;
-                if (gender !== userGender) return false;
-              }
-              if (!salaryRange) return false;
-              if (salaryRange.includes("and above"))
-                return salary >= parseInt(salaryRange);
-              if (salaryRange.includes("-")) {
-                const [min, max] = salaryRange.split("-").map(Number);
-                return salary >= min && salary <= max;
-              }
-              return salary == parseInt(salaryRange, 10);
-            }
-          );
-          if (matchedPT) {
-            pt = matchedPT.professionalTax;
-          }
-        }
 
         const otherDeductions = {};
         if (salaryInfo.individualDeduction) {
@@ -531,6 +508,34 @@ var src = function registerEndpoint(router, { services }) {
           (employerLwf || 0) +
           totalSalaryArrearAmount;
 
+        const endMonth = new Date(endDate).getMonth() + 1;
+        let pt = 0;
+        if (stateTax?.PtMonth?.Month == endMonth) {
+          pt = stateTax.PtMonth.professionalTax;
+        } else {
+          const userGender = personal?.assignedUser?.gender;
+          const salary = totalEarnings || 0;
+          const matchedPT = (stateTax?.PT || []).find(
+            ({ salaryRange, gender }) => {
+              if (gender) {
+                if (!userGender) return false;
+                if (gender !== userGender) return false;
+              }
+              if (!salaryRange) return false;
+              if (salaryRange.includes("and above"))
+                return salary >= parseInt(salaryRange);
+              if (salaryRange.includes("-")) {
+                const [min, max] = salaryRange.split("-").map(Number);
+                return salary >= min && salary <= max;
+              }
+              return salary == parseInt(salaryRange, 10);
+            }
+          );
+          if (matchedPT) {
+            pt = matchedPT.professionalTax;
+          }
+        }
+
         const totalDeductions =
           Object.values(adjustedDeductions).reduce((sum, val) => sum + val, 0) +
           employerContributions.reduce(
@@ -545,7 +550,6 @@ var src = function registerEndpoint(router, { services }) {
           Object.values(otherDeductions).reduce((sum, val) => sum + val, 0) +
           (pt || 0) +
           (employeeLwf || 0);
-
         return {
           // ...personal,
           data: payrollVerificationData,

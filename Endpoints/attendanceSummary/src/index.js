@@ -129,12 +129,56 @@ module.exports = function registerEndpoint(router, { services }) {
           limit: -1,
         });
 
+        const personalModuleService = new ItemsService("personalModule", {
+  schema: req.schema,
+  accountability: req.accountability,
+});
+
+        const personalModuleData = await personalModuleService.readByQuery({
+  filter: {
+    id: { _in: paginatedEmployeeIds },
+  },
+  fields: [
+    "id",
+    "employeeId",    
+    "config.attendancePolicies",
+    "config.attendancePolicies.LateCommingDayMode",
+    "config.attendancePolicies.earlyExitAllowed",
+    "config.attendancePolicies.earlyLeavingDayMode",
+    "config.attendancePolicies.earlyLeavingType",
+    "config.attendancePolicies.entryTimeLimit",
+    "config.attendancePolicies.exitTimeLimit",
+    "config.attendancePolicies.isOverTime",
+    "config.attendancePolicies.isWorkingHours",
+    "config.attendancePolicies.lateComingType",
+    "config.attendancePolicies.lateEntryAllowed",
+    "config.attendancePolicies.lateEntryPenaltyAmt",
+    "config.attendancePolicies.locationCentric",
+    "config.attendancePolicies.setEntryTimeLimit",
+    "config.attendancePolicies.setExitTimeLimit",
+    "config.attendancePolicies.setMinWorkingHours",
+    "config.attendancePolicies.setOverTimeLimit",
+    "config.attendancePolicies.workingHoursType",
+    "config.attendancePolicies.workinghrsDaysLimit",
+    "config.attendancePolicies.wrkHoursDayMode",
+    "config.attendanceSettings"
+  ],
+  sort: ["-date_updated"],
+  limit: -1,
+});
+
+const personalModuleMap = Object.fromEntries(personalModuleData.map(p => [p.id, p]));
+
+
         console.log(`Found ${records.length} attendance records`);
 
         const result = {};
         paginatedEmployeeIds.forEach((empId) => {
-          result[empId] = { employeeId: empId, ...structuredClone(ALL_TYPES) };
-        });
+          result[empId] = {
+  employeeId: empId,
+  ...structuredClone(ALL_TYPES)
+  };
+  });
 
         console.log("Processing attendance records");
         records.forEach((record) => {
@@ -159,12 +203,29 @@ module.exports = function registerEndpoint(router, { services }) {
 
           empData.totalPayableDays += payableDay;
 
-          if (record.earlyDeparture && record.earlyDeparture !== "00:00:00") {
-            empData.earlyLeaving += 1;
-          }
-          if (record.lateBy && record.lateBy !== "00:00:00") {
-            empData.lateComing += 1;
-          }
+          if (
+  record.earlyDeparture &&
+  record.earlyDeparture !== "00:00:00" &&
+  personalModuleMap[record.employeeId]?.config?.attendancePolicies?.exitTimeLimit &&
+  personalModuleMap[record.employeeId]?.config?.attendancePolicies?.earlyLeavingType === "fixed" &&
+  record.earlyDeparture > personalModuleMap[record.employeeId]?.config?.attendancePolicies?.setExitTimeLimit
+) {
+  empData.earlyLeaving += 1;
+}
+
+
+
+          if (
+  record.lateBy &&
+  record.lateBy !== "00:00:00" &&
+  personalModuleMap[record.employeeId]?.config?.attendancePolicies?.entryTimeLimit &&
+  personalModuleMap[record.employeeId]?.config?.attendancePolicies?.lateComingType === "fixed" &&
+  record.lateBy > personalModuleMap[record.employeeId]?.config?.attendancePolicies?.setEntryTimeLimit
+) {
+  empData.lateComing += 1;
+}
+
+
           if (record.overTime && record.overTime !== "00:00:00") {
             switch (record.attendance) {
               case "present":
