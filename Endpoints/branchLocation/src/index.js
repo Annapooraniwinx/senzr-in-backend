@@ -77,10 +77,88 @@ export default (router) => {
       });
     }
   });
+  // 🔄 Convert coordinates to address (Reverse Geocoding)
+  router.post("/location/reverse-geocode", async (req, res) => {
+    const { lat, lng } = req.body;
 
-  router.get("/", (req, res) =>
-    res.send("🌍 Places API (New) backend working")
-  );
+    if (!lat || !lng) {
+      return res.status(400).json({ error: "Latitude and longitude required" });
+    }
+
+    try {
+      const response = await axios.get(
+        `https://maps.googleapis.com/maps/api/geocode/json`,
+        {
+          params: {
+            latlng: `${lat},${lng}`,
+            key: GOOGLE_API_KEY,
+          },
+        }
+      );
+
+      const result = response.data.results?.[0];
+
+      if (!result) {
+        return res
+          .status(404)
+          .json({ error: "No address found for given coordinates" });
+      }
+
+      res.json({
+        address: result.formatted_address,
+        place_id: result.place_id,
+        location: result.geometry.location,
+      });
+    } catch (err) {
+      console.error(err.response?.data || err.message);
+      res.status(500).json({
+        error: "Reverse geocoding failed",
+        detail: err.response?.data || err.message,
+      });
+    }
+  });
+
+  // 📍 Convert address to lat/lng (Geocoding)
+  router.post("/location/geocode", async (req, res) => {
+    const { address } = req.body;
+
+    if (!address) {
+      return res.status(400).json({ error: "Address is required" });
+    }
+
+    try {
+      const response = await axios.get(
+        `https://maps.googleapis.com/maps/api/geocode/json`,
+        {
+          params: {
+            address,
+            key: GOOGLE_API_KEY,
+          },
+        }
+      );
+
+      const result = response.data.results?.[0];
+
+      if (!result) {
+        return res
+          .status(404)
+          .json({ error: "No location found for given address" });
+      }
+
+      res.json({
+        place_id: result.place_id,
+        lat: result.geometry.location.lat,
+        lng: result.geometry.location.lng,
+        full_address: result.formatted_address,
+      });
+    } catch (err) {
+      console.error(err.response?.data || err.message);
+      res.status(500).json({
+        error: "Geocoding failed",
+        detail: err.response?.data || err.message,
+      });
+    }
+  });
 };
 
 // export default (router) => {
