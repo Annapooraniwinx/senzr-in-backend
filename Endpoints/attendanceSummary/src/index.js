@@ -14,12 +14,22 @@ module.exports = function registerEndpoint(router, { services }) {
     holidayPresent: 0,
     weekoffPresent: 0,
     earlyLeaving: 0,
+    earlyLeavingCount: 0,
+    earlyLeavingAllowed: 0,
+    earlyLeavingData: {},
     lateComing: 0,
+    lateComingAllowed: 0,
     workingDayOT: 0,
     weekOffOT: 0,
     holidayOT: 0,
+    lateData: {},
+    lateEntryCount: 0,
     workFromHomeOT: 0,
     totalPayableDays: 0,
+    workingHoursCount: 0,
+    workingHours: 0,
+    workingHoursAllowed: 0,
+    workingHoursData: {},
   };
 
   router.get("/", async (req, res) => {
@@ -130,55 +140,62 @@ module.exports = function registerEndpoint(router, { services }) {
         });
 
         const personalModuleService = new ItemsService("personalModule", {
-  schema: req.schema,
-  accountability: req.accountability,
-});
+          schema: req.schema,
+          accountability: req.accountability,
+        });
 
         const personalModuleData = await personalModuleService.readByQuery({
-  filter: {
-    id: { _in: paginatedEmployeeIds },
-  },
-  fields: [
-    "id",
-    "employeeId",    
-    "config.attendancePolicies",
-    "config.attendancePolicies.LateCommingDayMode",
-    "config.attendancePolicies.earlyExitAllowed",
-    "config.attendancePolicies.earlyLeavingDayMode",
-    "config.attendancePolicies.earlyLeavingType",
-    "config.attendancePolicies.entryTimeLimit",
-    "config.attendancePolicies.exitTimeLimit",
-    "config.attendancePolicies.isOverTime",
-    "config.attendancePolicies.isWorkingHours",
-    "config.attendancePolicies.lateComingType",
-    "config.attendancePolicies.lateEntryAllowed",
-    "config.attendancePolicies.lateEntryPenaltyAmt",
-    "config.attendancePolicies.locationCentric",
-    "config.attendancePolicies.setEntryTimeLimit",
-    "config.attendancePolicies.setExitTimeLimit",
-    "config.attendancePolicies.setMinWorkingHours",
-    "config.attendancePolicies.setOverTimeLimit",
-    "config.attendancePolicies.workingHoursType",
-    "config.attendancePolicies.workinghrsDaysLimit",
-    "config.attendancePolicies.wrkHoursDayMode",
-    "config.attendanceSettings"
-  ],
-  sort: ["-date_updated"],
-  limit: -1,
-});
+          filter: {
+            id: { _in: paginatedEmployeeIds },
+          },
+          fields: [
+            "id",
+            "employeeId",
+            "config.attendancePolicies",
+            "config.attendancePolicies.LateCommingDayMode",
+            "config.attendancePolicies.earlyExitAllowed",
+            "config.attendancePolicies.earlyLeavingDayMode",
+            "config.attendancePolicies.earlyLeavingType",
+            "config.attendancePolicies.entryTimeLimit",
+            "config.attendancePolicies.exitTimeLimit",
+            "config.attendancePolicies.isOverTime",
+            "config.attendancePolicies.isWorkingHours",
+            "config.attendancePolicies.lateComingType",
+            "config.attendancePolicies.lateEntryAllowed",
+            "config.attendancePolicies.lateEntryPenaltyAmt",
+            "config.attendancePolicies.locationCentric",
+            "config.attendancePolicies.setEntryTimeLimit",
+            "config.attendancePolicies.setExitTimeLimit",
+            "config.attendancePolicies.setMinWorkingHours",
+            "config.attendancePolicies.setOverTimeLimit",
+            "config.attendancePolicies.workingHoursType",
+            "config.attendancePolicies.workinghrsDaysLimit",
+            "config.attendancePolicies.wrkHoursDayMode",
+            "config.attendancePolicies.lateCommingLeave",
+            "config.attendancePolicies.earlyLeavingLeave",
+            "config.attendancePolicies.wrkHoursLeave",
+            "config.attendancePolicies.weekOffType",
+            "config.attendancePolicies.publicHolidayType",
+            "config.attendancePolicies.extraHoursType",
+            "config.attendanceSettings",
+          ],
+          sort: ["-date_updated"],
+          limit: -1,
+        });
 
-const personalModuleMap = Object.fromEntries(personalModuleData.map(p => [p.id, p]));
-
+        const personalModuleMap = Object.fromEntries(
+          personalModuleData.map((p) => [p.id, p])
+        );
 
         console.log(`Found ${records.length} attendance records`);
 
         const result = {};
         paginatedEmployeeIds.forEach((empId) => {
           result[empId] = {
-  employeeId: empId,
-  ...structuredClone(ALL_TYPES)
-  };
-  });
+            employeeId: empId,
+            ...structuredClone(ALL_TYPES),
+          };
+        });
 
         console.log("Processing attendance records");
         records.forEach((record) => {
@@ -203,28 +220,156 @@ const personalModuleMap = Object.fromEntries(personalModuleData.map(p => [p.id, 
 
           empData.totalPayableDays += payableDay;
 
+          const earlyExitAllowed =
+            personalModuleMap[record.employeeId]?.config?.attendancePolicies
+              ?.earlyExitAllowed;
+          empData.earlyLeavingAllowed = earlyExitAllowed;
+          const lateComingAllowed =
+            personalModuleMap[record.employeeId]?.config?.attendancePolicies
+              ?.lateEntryAllowed;
+          empData.lateComingAllowed = lateComingAllowed;
+          const workingHoursAllowed =
+            personalModuleMap[record.employeeId]?.config?.attendancePolicies
+              ?.workinghrsDaysLimit;
+          empData.workingHoursAllowed = workingHoursAllowed;
           if (
-  record.earlyDeparture &&
-  record.earlyDeparture !== "00:00:00" &&
-  personalModuleMap[record.employeeId]?.config?.attendancePolicies?.exitTimeLimit &&
-  personalModuleMap[record.employeeId]?.config?.attendancePolicies?.earlyLeavingType === "fixed" &&
-  record.earlyDeparture > personalModuleMap[record.employeeId]?.config?.attendancePolicies?.setExitTimeLimit
-) {
-  empData.earlyLeaving += 1;
-}
+            record.earlyDeparture !== "00:00:00" &&
+            record.earlyDeparture >
+              personalModuleMap[record.employeeId]?.config?.attendancePolicies
+                ?.setExitTimeLimit
+          ) {
+            empData.earlyExitCount += 1;
 
+            const earlyLeavingType =
+              personalModuleMap[record.employeeId]?.config?.attendancePolicies
+                ?.earlyLeavingType;
+            const dayMode =
+              personalModuleMap[record.employeeId]?.config?.attendancePolicies
+                ?.earlyLeavingDayMode;
+            const leaveType =
+              personalModuleMap[record.employeeId]?.config?.attendancePolicies
+                ?.earlyLeavingLeave;
 
+            const exceededCount = empData.earlyExitCount - earlyExitAllowed;
+            if (exceededCount <= 0) return;
+
+            if (earlyLeavingType === "lop") {
+              empData.earlyData = { mode: dayMode };
+              if (dayMode === "quarterDay") {
+                empData.earlyLeaving += 0.25;
+                empData.totalPayableDays -= 0.25;
+              } else if (dayMode === "halfDay") {
+                empData.earlyLeaving += 0.5;
+                empData.totalPayableDays -= 0.5;
+              } else {
+                empData.earlyLeaving += 1;
+                empData.totalPayableDays -= 1;
+              }
+            } else if (earlyLeavingType === "leave") {
+              empData.earlyData = { mode: dayMode, leave: leaveType };
+              if (dayMode === "quarterDay") {
+                empData.earlyLeaving += 0.25;
+                empData.totalPayableDays -= 0.25;
+              } else if (dayMode === "halfDay") {
+                empData.earlyLeaving += 0.5;
+                empData.totalPayableDays -= 0.5;
+              } else {
+                empData.earlyLeaving += 1;
+                empData.totalPayableDays -= 1;
+              }
+            } else {
+              empData.earlyLeaving += 1;
+              empData.totalPayableDays -= 1;
+            }
+          }
 
           if (
-  record.lateBy &&
-  record.lateBy !== "00:00:00" &&
-  personalModuleMap[record.employeeId]?.config?.attendancePolicies?.entryTimeLimit &&
-  personalModuleMap[record.employeeId]?.config?.attendancePolicies?.lateComingType === "fixed" &&
-  record.lateBy > personalModuleMap[record.employeeId]?.config?.attendancePolicies?.setEntryTimeLimit
-) {
-  empData.lateComing += 1;
-}
+            record.lateBy !== "00:00:00" &&
+            record.lateBy >
+              personalModuleMap[record.employeeId]?.config?.attendancePolicies
+                ?.setEntryTimeLimit
+          ) {
+            empData.lateEntryCount += 1;
 
+            const lateComingType =
+              personalModuleMap[record.employeeId]?.config?.attendancePolicies
+                ?.lateComingType;
+            const dayMode =
+              personalModuleMap[record.employeeId]?.config?.attendancePolicies
+                ?.LateCommingDayMode;
+            const leaveType =
+              personalModuleMap[record.employeeId]?.config?.attendancePolicies
+                ?.lateCommingLeave;
+
+            const exceededCount = empData.lateEntryCount - lateComingAllowed;
+            if (exceededCount <= 0) return;
+
+            if (lateComingType === "lop") {
+              empData.lateData = { mode: dayMode };
+              if (dayMode === "quarter") {
+                empData.lateComing += 0.25;
+              } else if (dayMode === "half") {
+                empData.lateComing += 0.5;
+              } else {
+                empData.lateComing += 1;
+              }
+            } else if (lateComingType === "leave") {
+              empData.lateData = { mode: dayMode, leave: leaveType };
+              if (dayMode === "quarter") {
+                empData.lateComing += 0.25;
+              } else if (dayMode === "half") {
+                empData.lateComing += 0.5;
+              } else {
+                empData.lateComing += 1;
+              }
+            } else {
+              empData.lateComing += 1;
+            }
+          }
+
+          if (
+            record.workingHours <
+            personalModuleMap[record.employeeId]?.config?.attendancePolicies
+              ?.setMinWorkingHours
+          ) {
+            empData.workingHoursCount += 1;
+
+            const workingHoursType =
+              personalModuleMap[record.employeeId]?.config?.attendancePolicies
+                ?.workingHoursType;
+            const dayMode =
+              personalModuleMap[record.employeeId]?.config?.attendancePolicies
+                ?.wrkHoursDayMode;
+            const leaveType =
+              personalModuleMap[record.employeeId]?.config?.attendancePolicies
+                ?.wrkHoursLeave;
+
+            const exceededCount =
+              empData.workingHoursCount - workingHoursAllowed;
+            if (exceededCount <= 0) return;
+
+            if (workingHoursType === "lop") {
+              empData.workingHoursData = { mode: dayMode };
+              if (dayMode === "quarterDay") {
+                empData.workingHours += 0.25;
+              } else if (dayMode === "halfDay") {
+                empData.workingHours += 0.5;
+              } else {
+                empData.workingHours += 1;
+              }
+            } else if (workingHoursType === "leave") {
+              empData.workingHoursData = { mode: dayMode, leave: leaveType };
+              if (dayMode === "quarterDay") {
+                empData.workingHours += 0.25;
+              } else if (dayMode === "halfDay") {
+                empData.workingHours += 0.5;
+              } else {
+                empData.workingHours += 1;
+              }
+            } else {
+              empData.workingHours += 1;
+            }
+          }
 
           if (record.overTime && record.overTime !== "00:00:00") {
             switch (record.attendance) {
