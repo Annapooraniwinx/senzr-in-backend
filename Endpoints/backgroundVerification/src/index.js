@@ -310,7 +310,7 @@ export default (router, { services, getSchema, database }) => {
   async function verifyWithSurepass(documentType, documentNumber) {
     try {
       const SUREPASS_API_KEY =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc0OTEwMTg1MiwianRpIjoiYzg3MGY5M2EtYTA4MS00ZGMwLTg5OGItZjU2OTJhMTRiMzE4IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NDkxMDE4NTIsImV4cCI6MTc1MTY5Mzg1MiwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.YqYwg8M5sqdWUFAXGuZQaG_9pnppLXGhDwVEhtIUnqA";
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MTQ1OTUxOCwianRpIjoiODIxMjhkNTctZGM4ZS00MzcxLWI0YzUtOWViMWJiMmI5ODU2IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTE0NTk1MTgsImV4cCI6MTc1NDA1MTUxOCwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.vr3OctRUNgnLHCvSU6IZkQwfQZBFKwb_-NP-gSlAe7Y";
       if (!SUREPASS_API_KEY) {
         throw new Error("SUREPASS_TOKEN is not defined in environment");
       }
