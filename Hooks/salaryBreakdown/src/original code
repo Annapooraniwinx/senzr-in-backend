@@ -1,0 +1,1152 @@
+export default ({ action }, { services }) => {
+  const handleSalarySettingChange = async (event, { database, schema }) => {
+    const { keys } = event;
+    const { ItemsService } = services;
+    console.log("services", ItemsService);
+
+    const updatedId = keys[0];
+
+    const personalRows = await database("personalModule")
+      .join(
+        "directus_users",
+        "personalModule.assignedUser",
+        "directus_users.id"
+      )
+      .select(
+        "personalModule.employeeId",
+        "personalModule.id",
+        "personalModule.allowPF",
+        "personalModule.allowESI",
+        "directus_users.PFAccountNumber as assignedUserPF",
+        "directus_users.ESIAccountNumber as assignedUserESI"
+      )
+      .where("personalModule.salaryConfig", updatedId);
+
+    const employeeIds = personalRows.map((row) => row.employeeId);
+
+    const salaryRows = await database("SalaryBreakdown")
+      .join("personalModule", "SalaryBreakdown.employee", "personalModule.id")
+      .select(
+        "SalaryBreakdown.ctc",
+        "personalModule.employeeId",
+        "SalaryBreakdown.id"
+      )
+      .whereIn("personalModule.employeeId", employeeIds);
+    const salaryBreakdownIds = personalRows.map((pr) => {
+      const matched = salaryRows.find((sr) => sr.employeeId === pr.employeeId);
+      return matched?.id || null;
+    });
+
+    const salarySetting = await database("salarySetting")
+      .select("*")
+      .where("id", updatedId)
+      .first();
+    const ctcs = personalRows.map((pr) => {
+      const matched = salaryRows.find((sr) => sr.employeeId === pr.employeeId);
+      return matched?.ctc || 0;
+    });
+
+    // const monthlyCtcs = ctcs.map((ctc) => ctc / 12);
+
+    const salaryBreakdown = calculateSalaryBreakdown(
+      personalRows,
+      // monthlyCtcs,
+      salarySetting,
+      ctcs
+    );
+
+    await updateSalaryBreakdown(
+      personalRows,
+      // monthlyCtcs,
+      salaryBreakdown,
+      ItemsService,
+      database,
+      salaryBreakdownIds,
+      schema
+    );
+  };
+  const handlePersonalModuleUpdate = async (event, { database, schema }) => {
+    const personalModuleId = event.keys?.[0];
+
+    const { payload } = event;
+
+    const { ItemsService } = services;
+
+    if (!ItemsService) {
+      console.error("❌ ItemsService is not available");
+      return;
+    }
+    const itemsService = new ItemsService("SalaryBreakdown", {
+      knex: database,
+      schema,
+    });
+    console.error("❌ ItemsService is not available", ItemsService);
+
+    const shouldRun =
+      "allowPF" in payload ||
+      "allowESI" in payload ||
+      "salaryConfig" in payload ||
+      payload?.assignedUser?.PFAccountNumber ||
+      payload?.assignedUser?.ESIAccountNumber;
+
+    if (!shouldRun) {
+      console.log(
+        "⚠️ No relevant fields changed. Skipping salary breakdown logic."
+      );
+      return;
+    }
+
+    if (!personalModuleId) {
+      console.log("❌ No personalModule ID found in event context");
+      return;
+    }
+
+    const personalRow = await database("personalModule")
+      .join(
+        "directus_users",
+        "personalModule.assignedUser",
+        "directus_users.id"
+      )
+      .select(
+        "personalModule.employeeId",
+        "personalModule.id",
+        "personalModule.allowPF",
+        "personalModule.allowESI",
+        "personalModule.salaryConfig",
+        "directus_users.PFAccountNumber as assignedUserPF",
+        "directus_users.ESIAccountNumber as assignedUserESI"
+      )
+      .where("personalModule.id", personalModuleId)
+      .first();
+
+    if (!personalRow) {
+      console.log("⚠️ No personalModule row found for ID:", personalModuleId);
+      return;
+    }
+
+    console.log("✅ personalRow fetched:", personalRow);
+
+    const { salaryConfig } = personalRow;
+
+    if (!salaryConfig) {
+      console.log("❌ No salaryConfig found in personalModule");
+      return;
+    }
+
+    // Step 2: Fetch salarySetting
+    const salarySetting = await database("salarySetting")
+      .select("*")
+      .where("id", salaryConfig)
+      .first();
+
+    if (!salarySetting) {
+      console.log("⚠️ No salarySetting found for ID:", salaryConfig);
+      return;
+    }
+
+    console.log("✅ salarySettings fetched:", salarySetting);
+
+    const salaryRow = await database("SalaryBreakdown")
+      .select("ctc", "id")
+      .where("employee", personalModuleId)
+      .first();
+
+    if (!salaryRow) {
+      console.log(
+        "⚠️ No SalaryBreakdown found for employee ID:",
+        personalModuleId
+      );
+      return;
+    }
+
+    const salaryBreakdownIds = salaryRow?.id || null;
+
+    console.log("✅ salaryBreakdownIds:", salaryBreakdownIds);
+    const monthlyCtcs = [salaryRow.ctc / 12];
+
+    const salaryBreakdown = calculateSalaryBreakdown(
+      [personalRow],
+      monthlyCtcs,
+      salarySetting
+    );
+
+    updateSingleSalaryBreakdown(
+      0, // index
+      salaryBreakdown, // salaryBreakdown
+      monthlyCtcs, // monthlyCtcs
+      salaryBreakdownIds, // salaryBreakdownId
+      ItemsService, // ItemsService
+      database, // database
+      schema // schema
+    );
+
+    console.log("✅ Salary breakdown calculated:", salaryBreakdown);
+
+    return salarySetting;
+  };
+
+  const handleSalaryBreakdownUpdate = async (event, { database, schema }) => {
+    const personalModuleId = event.keys?.[0];
+    const { payload } = event;
+    const { ItemsService } = services;
+    console.log("services", ItemsService);
+
+    const shouldRun = "ctc" in payload;
+
+    if (!shouldRun) {
+      console.log(
+        "⚠️ No relevant fields changed. Skipping salary breakdown logic."
+      );
+      return;
+    }
+
+    if (!personalModuleId) {
+      console.log("❌ No personalModule ID found in event context");
+      return;
+    }
+
+    const personalRow = await database("personalModule")
+      .join(
+        "directus_users",
+        "personalModule.assignedUser",
+        "directus_users.id"
+      )
+      .select(
+        "personalModule.employeeId",
+        "personalModule.id",
+        "personalModule.salaryConfig",
+        "directus_users.first_name as userName"
+      )
+      .where("personalModule.id", personalModuleId)
+      .first();
+
+    if (!personalRow) {
+      console.log("⚠️ No personalModule row found for ID:", personalModuleId);
+      return;
+    }
+
+    console.log("✅ personalRow fetched:", personalRow);
+
+    const { salaryConfig } = personalRow;
+
+    if (!salaryConfig) {
+      console.log("❌ No salaryConfig found in personalModule");
+      return;
+    }
+
+    // Step 2: Fetch salarySetting
+    const salarySetting = await database("salarySetting")
+      .select("*")
+      .where("id", salaryConfig)
+      .first();
+
+    if (!salarySetting) {
+      console.log("⚠️ No salarySetting found for ID:", salaryConfig);
+      return;
+    }
+
+    console.log("✅ salarySettings fetched:", salarySetting);
+
+    // Step 3: Calculate salary breakdown again (if needed)
+    const salaryRow = await database("SalaryBreakdown")
+      .select("ctc", "id")
+      .where("employee", personalModuleId)
+      .first();
+
+    if (!salaryRow) {
+      console.log(
+        "⚠️ No SalaryBreakdown found for employee ID:",
+        personalModuleId
+      );
+      return;
+    }
+
+    const salaryBreakdownIds = [salaryRow.id];
+
+    const monthlyCtcs = [salaryRow.ctc / 12];
+
+    const salaryBreakdown = calculateSalaryBreakdown(
+      [personalRow],
+      monthlyCtcs,
+      salarySetting
+    );
+
+    updateSingleSalaryBreakdown(
+      [personalRow],
+      monthlyCtcs,
+      salaryBreakdown,
+      ItemsService,
+      database,
+      salaryBreakdownIds,
+      schema
+    );
+
+    console.log("✅ New salary breakdown calculated:", salaryBreakdown);
+
+    return salaryBreakdown;
+  };
+  const payrollVerification = async (event, { database, schema }) => {
+    const { payload } = event;
+    console.log("67889",payload)
+    const employeeIds = Array.isArray(payload) ? payload.map(item => item.employee) : [payload.employee];
+
+    const { ItemsService } = services;
+    console.log("services", ItemsService);
+
+    if (!ItemsService) {
+      console.error("❌ ItemsService is not available");
+      return;
+    }
+
+    const itemsService = new ItemsService("SalaryBreakdown", {
+      knex: database,
+      schema,
+    });
+
+    const shouldRun = Array.isArray(payload)
+  ? payload.some(item => "attendaceVerification" in item)
+  : "attendaceVerification" in payload;
+    if (!shouldRun) {
+      console.log(
+        "⚠️ attendanceVerification not changed. Skipping salary breakdown logic."
+      );
+      return;
+    }
+
+    const personalRows = await database("personalModule")
+      .join(
+        "directus_users",
+        "personalModule.assignedUser",
+        "directus_users.id"
+      )
+      .select(
+        "personalModule.employeeId",
+        "personalModule.id",
+        "personalModule.allowPF",
+        "personalModule.allowESI",
+        "personalModule.salaryConfig",
+        "directus_users.PFAccountNumber as assignedUserPF",
+        "directus_users.ESIAccountNumber as assignedUserESI"
+      )
+      .whereIn("personalModule.employeeId", employeeIds);
+
+    const personalModuleIds = personalRows.map((row) => row.id);
+
+    const salaryRows = await database("SalaryBreakdown")
+      .select("ctc", "id", "employee")
+      .whereIn("employee", personalModuleIds);
+
+    const salaryBreakdownIds = personalRows.map((pr) => {
+      const matched = salaryRows.find((sr) => sr.employee === pr.id);
+      return matched?.id || null;
+    });
+
+    const ctcs = personalRows.map((pr) => {
+      const matched = salaryRows.find((sr) => sr.employee === pr.id);
+      return matched?.ctc || 0;
+    });
+
+    const salaryConfigIds = personalRows
+      .map((row) => row.salaryConfig)
+      .filter(Boolean);
+
+    const salarySettingRows = await database("salarySetting")
+      .select("*")
+      .whereIn("id", salaryConfigIds);
+
+    const salarySettingMap = Object.fromEntries(
+      salarySettingRows.map((s) => [s.id, s])
+    );
+
+    const salaryBreakdown = calculateSalaryBreakdown(
+      personalRows,
+      ctcs.map((ctc) => ctc / 12),
+      salarySettingMap,
+      ctcs
+    );
+
+    await updateSalaryBreakdown(
+      personalRows,
+      salaryBreakdown,
+      ItemsService,
+      database,
+      salaryBreakdownIds,
+      schema
+    );
+  };
+
+  action("salarySetting.items.update", handleSalarySettingChange);
+  action("salarySetting.items.delete", handleSalarySettingChange);
+  // action("personalModule.items.update", handlePersonalModuleUpdate);
+  // action("SalaryBreakdown.items.update", handleSalaryBreakdownUpdate);
+  // action("payrollVerification.items.update", payrollVerification);
+};
+// const getFrequency = (frequency) => {
+//   if (frequency === "yearly") {
+//     return 1;
+//   }
+//   if (frequency === "half-yearly") {
+//     return 2;
+//   }
+//   if (frequency === "quarterly") {
+//     return 4;
+//   }
+//   if (frequency === "monthly") {
+//     return 12;
+//   }
+//   return 1;
+// };
+
+const calculateSalaryBreakdown = (personalRows, salarySetting, ctcs) => {
+  // const bonusConfig = salarySetting.bonusConfig || null;
+  // const incentiveConfig = salarySetting.incentiveConfig || null;
+  // const retentionPayConfig = salarySetting.retentionPayConfig || null;
+
+  // if (bonusConfig?.withinCTC) {
+  //   const frequency = getFrequency(bonusConfig.frequency);
+  //   if (bonusConfig.amountType === "percentage") {
+  //     personalRows.forEach((row, index) => {
+  //       const bonusPerAmount = (ctcs[index] * Number(bonusConfig.value)) / 100;
+  //       row.bonus = bonusPerAmount / frequency;
+  //     });
+  //   } else {
+  //     personalRows.forEach((row) => {
+  //       row.bonus = Number(bonusConfig.value) / frequency;
+  //     });
+  //   }
+  // }
+
+  // if (incentiveConfig?.withinCTC) {
+  //   const frequency = getFrequency(incentiveConfig.frequency);
+  //   if (incentiveConfig.type === "percentage") {
+  //     personalRows.forEach((row, index) => {
+  //       const incentivePerAmount =
+  //         (ctcs[index] * Number(incentiveConfig.value)) / 100;
+  //       row.incentive = incentivePerAmount / frequency;
+  //     });
+  //   } else {
+  //     personalRows.forEach((row) => {
+  //       row.incentive = Number(incentiveConfig.value) / frequency;
+  //     });
+  //   }
+  // }
+
+  // if (retentionPayConfig?.withinCTC) {
+  //   const frequency = getFrequency(retentionPayConfig.frequency);
+  //   if (retentionPayConfig.type === "percentage") {
+  //     personalRows.forEach((row, index) => {
+  //       const retentionPerAmount =
+  //         (ctcs[index] * Number(retentionPayConfig.value)) / 100;
+  //       row.retention = retentionPerAmount / frequency;
+  //     });
+  //   } else {
+  //     personalRows.forEach((row) => {
+  //       row.retention = Number(retentionPayConfig.value) / frequency;
+  //     });
+  //   }
+  // }
+  // const finalAddons = personalRows.map((row) => {
+  //   const bonus = row.bonus || 0;
+  //   const incentive = row.incentive || 0;
+  //   const retention = row.retention || 0;
+
+  //   return bonus + incentive + retention;
+  // });
+
+  const annualCtc = ctcs.map((ctc) => ctc);
+
+
+  const monthlyCtcs = annualCtc.map((ctc) => ctc / 12);
+
+  const earnings = salarySetting.earnings || [];
+
+  const fixedEarningAppliedCtcs = {};
+  let fixedAmountTotal = 0;
+  console.log(
+    "📆 Monthly CTCs with employeeId:",
+    personalRows.map((p, i) => ({
+      employeeId: p.employeeId,
+      monthlyCTC: monthlyCtcs[i],
+    }))
+  );
+
+  console.log("Starting calculations for earnings...");
+
+  earnings.forEach((earning) => {
+    if (earning.calculations === "Fixed") {
+      const fixedAmount = earning.Fixed || 0;
+
+      fixedEarningAppliedCtcs[earning.name] = monthlyCtcs.map(
+        () => fixedAmount
+      );
+
+      fixedAmountTotal += fixedAmount;
+
+      console.log(`Fixed earning applied: ${earning.name} = ${fixedAmount}`);
+    }
+  });
+
+  console.log(`Total fixed amount applied: ${fixedAmountTotal}`);
+
+  const remainingMonthlyCtcs = monthlyCtcs.map((ctc) => ctc - fixedAmountTotal);
+  console.log(
+    "Remaining Monthly CTCs after fixed earnings applied:",
+    remainingMonthlyCtcs
+  );
+
+  const basicPay = remainingMonthlyCtcs.map(
+    (ctc) => ctc * ((salarySetting.basicPay || 0) / 100)
+  );
+  console.log("Calculated Basic Pay:", basicPay);
+
+  const hraEarning = earnings.find(
+    (e) => e.calculations === "Percentage" && e.name === "HRA"
+  );
+  const daEarning = earnings.find(
+    (e) => e.calculations === "Percentage" && e.name === "Dearness Allowance"
+  );
+
+  const hraAppliedCtcs = remainingMonthlyCtcs.map((ctc) => {
+    const percentage = (hraEarning?.Percentage || 0) / 100;
+    return ctc * percentage;
+  });
+  console.log("HRA Applied CTCs:", hraAppliedCtcs);
+
+  const daAppliedCtcs = remainingMonthlyCtcs.map((ctc) => {
+    const percentage = (daEarning?.Percentage || 0) / 100;
+    return ctc * percentage;
+  });
+  console.log("DA Applied CTCs:", daAppliedCtcs);
+
+  const otherPercentageEarnings = earnings.filter(
+    (e) =>
+      e.calculations === "Percentage" &&
+      e.name !== "HRA" &&
+      e.name !== "Dearness Allowance"
+  );
+
+  const otherEarningAppliedCtcs = {};
+
+  otherPercentageEarnings.forEach((e) => {
+    const percentage = (e.Percentage || 0) / 100;
+    otherEarningAppliedCtcs[e.name] = remainingMonthlyCtcs.map(
+      (ctc) => ctc * percentage
+    );
+    console.log(
+      `Other earning applied: ${e.name} = ${otherEarningAppliedCtcs[e.name]}`
+    );
+  });
+
+  const employerPFOption =
+    salarySetting.employersContributions?.EmployerPF?.selectedOption;
+  const employerPFBaseNames = (
+    salarySetting.employersContributions?.EmployerPF?.Calculations || []
+  ).map((calc) => calc.name);
+
+  const employerESIOption =
+    salarySetting.employersContributions?.EmployerESI?.selectedOption;
+  const employerESIBaseNames = (
+    salarySetting.employersContributions?.EmployerESI?.Calculations || []
+  ).map((calc) => calc.name);
+
+  const employeePFOption =
+    salarySetting.employeeDeductions?.EmployeePF?.selectedOption;
+  const employeePFBaseNames = (
+    salarySetting.employeeDeductions?.EmployeePF?.Calculations || []
+  ).map((calc) => calc.name);
+
+  const employeeESIOption =
+    salarySetting.employeeDeductions?.EmployeeESI?.selectedOption;
+  const employeeESIBaseNames = (
+    salarySetting.employeeDeductions?.EmployeeESI?.Calculations || []
+  ).map((calc) => calc.name);
+
+  const voluntaryPFOption =
+    salarySetting.employeeDeductions?.VoluntaryPF?.selectedOption;
+  const voluntaryPFBaseNames = (
+    salarySetting.employeeDeductions?.VoluntaryPF?.Calculations || []
+  ).map((calc) => calc.name);
+
+  const originalBasicPay = [...basicPay];
+  const originalDAAppliedCtcs = [...daAppliedCtcs];
+  const originalHRAAppliedCtcs = [...hraAppliedCtcs];
+
+  let workingBasicPay = [...basicPay];
+  let workingDAAppliedCtcs = [...daAppliedCtcs];
+  let workingHRAAppliedCtcs = [...hraAppliedCtcs];
+
+  const allEarningAmounts = {
+    "Basic Pay": workingBasicPay,
+    HRA: workingHRAAppliedCtcs,
+    "Dearness Allowance": workingDAAppliedCtcs,
+    ...otherEarningAppliedCtcs,
+    ...fixedEarningAppliedCtcs,
+  };
+
+  console.log("All earning amounts:", allEarningAmounts);
+
+  const tolerance = 0.4;
+  const convergedFlags = personalRows.map(() => false);
+  console.log("Converged flags initialized:", convergedFlags);
+
+  let iter = 0;
+  let finalEmployerPF = [];
+  let finalEmployerESI = [];
+  let finalAdminCharges = [];
+  let finalTotalEmployerContributions = [];
+  let finalTotalEarnings = [];
+
+  while (true) {
+    const activeIndices = convergedFlags
+      .map((flag, idx) => (!flag ? idx : -1))
+      .filter((idx) => idx !== -1);
+
+    if (activeIndices.length === 0) break;
+
+    const pfBaseAmount = activeIndices.map((index) => {
+      let total = 0;
+      for (const name of employerPFBaseNames) {
+        const val = allEarningAmounts[name]?.[index] || 0;
+        if (val > 0) total += val;
+      }
+      return total;
+    });
+
+    const esiBaseAmount = activeIndices.map((index) => {
+      let total = 0;
+      for (const name of employerESIBaseNames) {
+        const val = allEarningAmounts[name]?.[index] || 0;
+        if (val > 0) total += val;
+      }
+      return total;
+    });
+
+    const employerPFContributions = pfBaseAmount.map((base, i) => {
+      
+      const index = activeIndices[i];
+      const user = personalRows.find(
+        (u) =>
+          u.employeeId === personalRows[index]?.employeeId &&
+          (u.allowPF || u.assignedUserPF)
+      );
+      const percent = 0.12;
+      const calculated = base * percent;
+      const withinCTC =
+        salarySetting.employersContributions?.EmployerPF?.withinCTC;
+
+      const value =
+        !withinCTC || !employerPFOption || !user
+          ? 0
+          : employerPFOption === 1800
+          ? Math.min(calculated, 1800)
+          : calculated;
+      finalEmployerPF[index] = value;
+      return value;
+    });
+
+    const employerESIContributions = esiBaseAmount.map((base, i) => {
+      const index = activeIndices[i];
+      const user = personalRows.find(
+        (u) =>
+          u.employeeId === personalRows[index]?.employeeId &&
+          (u.allowESI || u.assignedUserESI)
+      );
+      const withinCTC =
+        salarySetting.employersContributions?.EmployerESI?.withinCTC;
+
+      const value =
+        !withinCTC || !employerESIOption || !user || monthlyCtcs[index] > 21000
+          ? 0
+          : Math.min(base * 0.0325, 682.5);
+      finalEmployerESI[index] = value;
+      return value;
+    });
+
+    const adminChargeEnabled = salarySetting.adminCharges?.enable;
+    const adminChargeRate =
+      parseFloat(salarySetting.adminCharges?.charge || "0") / 100;
+
+    const adminCharges = pfBaseAmount.map((base, i) => {
+      const index = activeIndices[i];
+      const user = personalRows.find(
+        (u) =>
+          u.employeeId === personalRows[index]?.employeeId &&
+          (u.allowPF || u.assignedUserPF)
+      );
+      const adminWithinCTC =
+        salarySetting.employersContributions?.EmployerPF?.withinCTC;
+
+      const value =
+        !adminChargeEnabled || !adminWithinCTC || !user
+          ? 0
+          : Math.min(base * adminChargeRate, 150);
+      finalAdminCharges[index] = value;
+      return value;
+    });
+
+    const totalEmployerContributions = employerPFContributions.map((_, i) => {
+      const total =
+        employerPFContributions[i] +
+        employerESIContributions[i] +
+        adminCharges[i];
+      finalTotalEmployerContributions[activeIndices[i]] = total;
+      return total;
+    });
+
+    const totalEarnings = activeIndices.map((i) => {
+      let total = workingBasicPay[i] || 0;
+      if (workingHRAAppliedCtcs[i] != null) total += workingHRAAppliedCtcs[i];
+      if (workingDAAppliedCtcs[i] != null) total += workingDAAppliedCtcs[i];
+      for (const arr of Object.values(otherEarningAppliedCtcs)) {
+        if (arr[i] != null) total += arr[i];
+      }
+      for (const arr of Object.values(fixedEarningAppliedCtcs)) {
+        if (arr[i] != null) total += arr[i];
+      }
+      finalTotalEarnings[i] = total;
+      return total;
+    });
+
+    const calculatedCTC = totalEarnings.map((earning, i) => {
+      return earning + totalEmployerContributions[i];
+    });
+
+    calculatedCTC.forEach((ctc, i) => {
+      const index = activeIndices[i];
+      const monthly = monthlyCtcs[index];
+      const diff = Math.abs(ctc - monthly);
+
+      if (diff <= tolerance) {
+        convergedFlags[index] = true;
+        return;
+      }
+
+      let extraAmount = Math.abs(ctc - monthly);
+      let hra = workingHRAAppliedCtcs[index];
+      let da = workingDAAppliedCtcs[index];
+      let basic = workingBasicPay[index];
+
+      const originalBasicVal = originalBasicPay[index];
+      const originalDAVal = originalDAAppliedCtcs[index];
+      const originalHRAVal = originalHRAAppliedCtcs[index];
+
+      if (ctc > monthly) {
+        if (extraAmount > 0 && hra > 0) {
+          const reduced = Math.min(hra, extraAmount);
+          hra -= reduced;
+          extraAmount -= reduced;
+        }
+
+        if (extraAmount > 0 && da > 0) {
+          const reduced = Math.min(da, extraAmount);
+          da -= reduced;
+          extraAmount -= reduced;
+        }
+
+        if (extraAmount > 0 && basic > 0) {
+          const reduced = Math.min(basic, extraAmount);
+          basic -= reduced;
+          extraAmount -= reduced;
+        }
+      } else {
+        if (extraAmount > 0 && basic < originalBasicVal) {
+          const canAdd = Math.min(originalBasicVal - basic, extraAmount);
+          basic += canAdd;
+          extraAmount -= canAdd;
+        }
+
+        if (extraAmount > 0 && da < originalDAVal) {
+          const canAdd = Math.min(originalDAVal - da, extraAmount);
+          da += canAdd;
+          extraAmount -= canAdd;
+        }
+
+        if (extraAmount > 0 && hra < originalHRAVal) {
+          const canAdd = Math.min(originalHRAVal - hra, extraAmount);
+          hra += canAdd;
+          extraAmount -= canAdd;
+        }
+      }
+      console.log("else case run");
+      workingBasicPay[index] = basic;
+      workingDAAppliedCtcs[index] = da;
+      workingHRAAppliedCtcs[index] = hra;
+      console.log(`Index ${index} → Basic: ${basic}, DA: ${da}, HRA: ${hra}`);
+    });
+  }
+
+  const pfBaseAmountOutside = personalRows.map((_, index) => {
+    let total = 0;
+    for (const name of employerPFBaseNames) {
+      const val = allEarningAmounts[name]?.[index] || 0;
+      if (val > 0) total += val;
+    }
+    return total;
+  });
+
+  const employerPFContributionsOutside = pfBaseAmountOutside.map(
+    (base, index) => {
+      const user = personalRows.find(
+        (u) =>
+          u.employeeId === personalRows[index]?.employeeId &&
+          (u.allowPF || u.assignedUserPF)
+      );
+      const percent = 0.12;
+      const calculated = base * percent;
+      if (!employerPFOption || !user) return 0;
+      return employerPFOption === 1800
+        ? Math.min(calculated, 1800)
+        : calculated;
+    }
+  );
+
+  const esiBaseAmountOutside = personalRows.map((_, index) => {
+    let total = 0;
+    for (const name of employerESIBaseNames) {
+      const val = allEarningAmounts[name]?.[index] || 0;
+      if (val > 0) total += val;
+    }
+    return total;
+  });
+
+  const employerESIContributionsOutside = esiBaseAmountOutside.map(
+    (base, index) => {
+      const user = personalRows.find(
+        (u) =>
+          u.employeeId === personalRows[index]?.employeeId &&
+          (u.allowESI || u.assignedUserESI)
+      );
+      if (!employerESIOption || !user || monthlyCtcs[index] > 21000) return 0;
+      return Math.min(base * 0.0325, 682.5);
+    }
+  );
+
+  const adminChargeRate =
+    parseFloat(salarySetting.adminCharges?.charge || "0") / 100;
+  const adminChargeEnabled = salarySetting.adminCharges?.enable;
+
+  const adminChargesOutside = personalRows.map((_, index) => {
+    let total = 0;
+    for (const name of employerPFBaseNames) {
+      const val = allEarningAmounts[name]?.[index] || 0;
+      if (val > 0) total += val;
+    }
+    const user = personalRows.find(
+      (u) =>
+        u.employeeId === personalRows[index]?.employeeId &&
+        (u.allowPF || u.assignedUserPF)
+    );
+    if (!adminChargeEnabled || !user) return 0;
+    return Math.min(total * adminChargeRate, 150);
+  });
+
+  const totalEmployerContributionsOutside = personalRows.map((_, index) => {
+    return (
+      employerPFContributionsOutside[index] +
+      employerESIContributionsOutside[index] +
+      adminChargesOutside[index]
+    );
+  });
+
+  console.log("Employer PF Outside:", employerPFContributionsOutside);
+  console.log("Employer ESI Outside:", employerESIContributionsOutside);
+  console.log("Admin Charges Outside:", adminChargesOutside);
+
+  const employeePFBaseAmount = monthlyCtcs.map((_, index) => {
+    let total = 0;
+    for (const name of employeePFBaseNames) {
+      const val = allEarningAmounts[name]?.[index] || 0;
+      if (val > 0) total += val;
+    }
+    return total;
+  });
+
+  const employeeESIBaseAmount = monthlyCtcs.map((_, index) => {
+    let total = 0;
+    for (const name of employeeESIBaseNames) {
+      const val = allEarningAmounts[name]?.[index] || 0;
+      if (val > 0) total += val;
+    }
+    return total;
+  });
+
+  const voluntaryPFBaseAmount = monthlyCtcs.map((_, index) => {
+    let total = 0;
+    for (const name of voluntaryPFBaseNames) {
+      const val = allEarningAmounts[name]?.[index] || 0;
+      if (val > 0) total += val;
+    }
+    return total;
+  });
+
+  const employeePFContributions = employeePFBaseAmount.map((base, index) => {
+    const user = personalRows.find(
+      (u) =>
+        u.employeeId === personalRows[index]?.employeeId &&
+        (u.allowPF || u.assignedUserPF)
+    );
+    const calculated = base * 0.12;
+    return !employeePFOption || !user
+      ? 0
+      : employeePFOption === 1800
+      ? Math.min(calculated, 1800)
+      : calculated;
+  });
+
+  const employeeESIContributions = employeeESIBaseAmount.map((base, index) => {
+    const user = personalRows.find(
+      (u) =>
+        u.employeeId === personalRows[index]?.employeeId &&
+        (u.allowESI || u.assignedUserESI)
+    );
+    return !employeeESIOption || !user || monthlyCtcs[index] > 21000
+      ? 0
+      : Math.min(base * 0.0075, 157.5);
+  });
+
+  const voluntaryPFContributions = voluntaryPFBaseAmount.map((base, index) => {
+    const user = personalRows.find(
+      (u) =>
+        u.employeeId === personalRows[index]?.employeeId &&
+        (u.allowPF || u.assignedUserPF)
+    );
+    const calculated = base * 0.13;
+    return !voluntaryPFOption || !user
+      ? 0
+      : voluntaryPFOption === 1800
+      ? Math.min(calculated, 1800)
+      : calculated;
+  });
+  const deductionsPerUser = monthlyCtcs.map((_, index) => {
+    const deduction = (
+      Array.isArray(salarySetting.deductions) ? salarySetting.deductions : []
+    ).map((d) => ({
+      name: d.name,
+      amount: d.amount,
+    }));
+
+    console.log("deduction for user", index, deduction);
+
+    return {
+      deduction,
+    };
+  });
+  console.log("basicPay for user", workingBasicPay);
+  return {
+    basicPay: workingBasicPay,
+    hraAppliedCtcs: workingHRAAppliedCtcs,
+    daAppliedCtcs: workingDAAppliedCtcs,
+    otherEarningAppliedCtcs,
+    fixedEarningAppliedCtcs,
+    adminChargesOutside,
+    employerPFContributionsOutside,
+    employerESIContributionsOutside,
+    totalEmployerContributionsOutside,
+    totalEarnings: finalTotalEarnings,
+    employeePFContributions,
+    employeeESIContributions,
+    voluntaryPFContributions,
+    deductionsPerUser,
+  };
+};
+
+const updateSalaryBreakdown = async (
+  salaryRows,
+  // monthlyCtcs,
+  salaryBreakdown,
+  ItemsService,
+  database,
+  salaryBreakdownIds,
+  schema
+) => {
+  const salaryService = new ItemsService("SalaryBreakdown", {
+    knex: database,
+    schema: schema,
+  });
+
+  console.log("🔍 Starting salary breakdown update for", salaryBreakdown);
+
+  for (let i = 0; i < salaryRows.length; i += 100) {
+    // const batchRows = salaryRows.slice(i, i + 100);
+    const batchIds = salaryBreakdownIds
+      .slice(i, i + 100)
+      .filter((id) => id !== null);
+
+    if (batchIds.length === 0) {
+      console.warn(`⚠️ No valid IDs in batch ${i / 100 + 1}`);
+      continue;
+    }
+
+    const updates = {};
+
+    for (let j = 0; j < batchIds.length; j++) {
+      const idx = i + j;
+      updates[batchIds[j]] = {
+        basicPay: String(salaryBreakdown.basicPay?.[idx] ?? 0),
+        netSalary: String(salaryBreakdown.totalEarnings?.[idx] ?? 0),
+        totalEarnings: String(salaryBreakdown.totalEarnings?.[idx] ?? 0),
+        // basicSalary: String(monthlyCtcs?.[idx] ?? 0),
+        totalDeductions: String(
+          (salaryBreakdown.employeePFContributions?.[idx] ?? 0) +
+            (salaryBreakdown.employeeESIContributions?.[idx] ?? 0) +
+            (salaryBreakdown.voluntaryPFContributions?.[idx] ?? 0)
+        ),
+        earnings: {
+          HRA: salaryBreakdown.hraAppliedCtcs?.[idx] ?? 0,
+          "Dearness Allowance": salaryBreakdown.daAppliedCtcs?.[idx] ?? 0,
+          ...Object.fromEntries(
+            Object.entries(salaryBreakdown.fixedEarningAppliedCtcs ?? {}).map(
+              ([key, arr]) => [key, arr?.[idx] ?? 0]
+            )
+          ),
+          ...Object.fromEntries(
+            Object.entries(salaryBreakdown.otherEarningAppliedCtcs ?? {}).map(
+              ([key, arr]) => [key, arr?.[idx] ?? 0]
+            )
+          ),
+        },
+
+        deduction: Object.fromEntries(
+          (salaryBreakdown.deductionsPerUser?.[idx]?.deduction ?? []).map(
+            (d) => [d.name, d.amount]
+          )
+        ),
+
+        employeeDeduction: {
+          EmployeePF: salaryBreakdown.employeePFContributions?.[idx] ?? 0,
+          EmployeeESI: salaryBreakdown.employeeESIContributions?.[idx] ?? 0,
+          VoluntaryPF: salaryBreakdown.voluntaryPFContributions?.[idx] ?? 0,
+        },
+        employersContribution: {
+          EmployerPF:
+            salaryBreakdown.employerPFContributionsOutside?.[idx] ?? 0,
+          EmployerESI:
+            salaryBreakdown.employerESIContributionsOutside?.[idx] ?? 0,
+        },
+        employeradmin: salaryBreakdown.adminCharges?.[idx] ?? 0,
+        totalDeductions: String(
+          Object.values(salaryBreakdown.deductions?.[idx] ?? {}).reduce(
+            (sum, val) => sum + (val || 0),
+            0
+          )
+        ),
+      };
+      console.log(`🔧 Will patch for ID ${batchIds[j]}:`, updates);
+    }
+
+    console.log(
+      `📦 Attempting batch update ${i / 100 + 1} with ${
+        batchIds.length
+      } records`
+    );
+    console.log(`🔄 Updating records batch: ${batchIds.join(", ")}`);
+
+    try {
+      await Promise.all(
+        Object.entries(updates).map(([id, data]) =>
+          salaryService.updateOne(id, data)
+        )
+      );
+      console.log(
+        `✅ Updated ${batchIds.length} salary records in batch ${i / 100 + 1}`
+      );
+    } catch (error) {
+      console.error(`❌ Batch ${i / 100 + 1} failed:`, error.message);
+    }
+  }
+};
+const updateSingleSalaryBreakdown = async (
+  index,
+  salaryBreakdown,
+  monthlyCtcs,
+  salaryBreakdownId,
+  ItemsService,
+  database,
+  schema
+) => {
+  if (!salaryBreakdownId) {
+    console.warn(`⚠️ No valid ID for user at index ${index}`);
+    return;
+  }
+  console.log("📦 ItemsService type:", typeof ItemsService);
+  console.log("📦 ItemsService value:", ItemsService);
+
+  const salaryService = new ItemsService("SalaryBreakdown", {
+    knex: database,
+    schema: schema,
+  });
+
+  console.log(`🔍 Starting salary breakdown update for user at index ${index}`);
+
+  const updateData = {
+    basicPay: String(salaryBreakdown.basicPay?.[index] ?? 0),
+    netSalary: String(salaryBreakdown.totalEarnings?.[index] ?? 0),
+    totalEarnings: String(salaryBreakdown.totalEarnings?.[index] ?? 0),
+    basicSalary: String(monthlyCtcs?.[index] ?? 0),
+    totalDeductions: String(
+      (salaryBreakdown.employeePFContributions?.[index] ?? 0) +
+        (salaryBreakdown.employeeESIContributions?.[index] ?? 0) +
+        (salaryBreakdown.voluntaryPFContributions?.[index] ?? 0)
+    ),
+
+    earnings: {
+      HRA: salaryBreakdown.hraAppliedCtcs?.[index] ?? 0,
+      "Dearness Allowance": salaryBreakdown.daAppliedCtcs?.[index] ?? 0,
+      ...Object.fromEntries(
+        Object.entries(salaryBreakdown.fixedEarningAppliedCtcs ?? {}).map(
+          ([key, arr]) => [key, arr?.[index] ?? 0]
+        )
+      ),
+      ...Object.fromEntries(
+        Object.entries(salaryBreakdown.otherEarningAppliedCtcs ?? {}).map(
+          ([key, arr]) => [key, arr?.[index] ?? 0]
+        )
+      ),
+    },
+
+    deduction: Object.fromEntries(
+      (salaryBreakdown.deductionsPerUser?.[index]?.deduction ?? []).map((d) => [
+        d.name,
+        d.amount,
+      ])
+    ),
+
+    employeeDeduction: {
+      EmployeePF: salaryBreakdown.employeePFContributions?.[index] ?? 0,
+      EmployeeESI: salaryBreakdown.employeeESIContributions?.[index] ?? 0,
+      VoluntaryPF: salaryBreakdown.voluntaryPFContributions?.[index] ?? 0,
+    },
+
+    employersContribution: {
+      EmployerPF: salaryBreakdown.employerPFContributionsOutside?.[index] ?? 0,
+      EmployerESI:
+        salaryBreakdown.employerESIContributionsOutside?.[index] ?? 0,
+    },
+
+    employeradmin: salaryBreakdown.adminCharges?.[index] ?? 0,
+
+    totalDeductions: String(
+      Object.values(salaryBreakdown.deductions?.[index] ?? {}).reduce(
+        (sum, val) => sum + (val || 0),
+        0
+      )
+    ),
+  };
+
+  console.log(
+    `🔧 Will patch salary breakdown for ID ${salaryBreakdownId}:`,
+    updateData
+  );
+
+  try {
+    await salaryService.updateOne(salaryBreakdownId, updateData);
+    console.log(
+      `✅ Successfully updated salary breakdown for ID ${salaryBreakdownId}`
+    );
+  } catch (error) {
+    console.error(
+      `❌ Failed to update salary breakdown for ID ${salaryBreakdownId}:`,
+      error.message
+    );
+  }
+};

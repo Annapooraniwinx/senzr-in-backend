@@ -220,6 +220,8 @@ module.exports = function registerEndpoint(router, { services }) {
           "assignedUser.last_name",
           "assignedDepartment.department_id.departmentName",
           "assignedBranch.branch_id.branchName",
+          "assignedUser.id",
+          "reportingManager",
         ],
         limit: limit,
         offset: offset,
@@ -278,6 +280,8 @@ module.exports = function registerEndpoint(router, { services }) {
           department:
             emp.assignedDepartment?.department_id?.departmentName || "Finance",
           branch: emp.assignedBranch?.branch_id?.branchName || "Bangalore",
+          userId: emp?.assignedUser?.id,
+          reportingManager: emp?.reportingManager,
         };
       });
 
@@ -318,6 +322,8 @@ module.exports = function registerEndpoint(router, { services }) {
           employeeCode: empDetails.employeeId,
           firstName: empDetails.firstName,
           department: empDetails.department,
+          userId: empDetails.userId,
+          reportingManager: empDetails.reportingManager,
           branch: empDetails.branch,
           month: currentMonth,
           monthName: getMonthName(currentMonth),
