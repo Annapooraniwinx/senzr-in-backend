@@ -3,7 +3,7 @@ import axios from "axios";
 export default (router, { services, getSchema }) => {
   const { ItemsService } = services;
 
-  // ✅ Bulk document verification (includes Aadhaar Digilocker)
+  // ✅ Bulk document verification
   router.post("/", async (req, res) => {
     try {
       const schema = await getSchema();
@@ -62,7 +62,6 @@ export default (router, { services, getSchema }) => {
           continue;
         }
 
-        // Always store status = pending first
         verifiedData[documentType] = {
           documentNumber: documentNumber || "aadhaar-via-digilocker",
           status: "pending",
@@ -70,7 +69,7 @@ export default (router, { services, getSchema }) => {
           payment: { amount: 10, currency: "INR", status: "pending" },
         };
 
-        // Aadhaar via Digilocker (initialize only)
+        // Aadhaar via DigiLocker
         if (documentType === "aadhaar") {
           try {
             const SUREPASS_API_KEY =
@@ -80,7 +79,7 @@ export default (router, { services, getSchema }) => {
               "https://sandbox.surepass.app/api/v1/digilocker/initialize",
               {
                 data: {
-                  expiry_minutes: 10,
+                  expiry_minutes: 20,
                   send_sms: false,
                   send_email: false,
                   verify_phone: false,
@@ -98,6 +97,17 @@ export default (router, { services, getSchema }) => {
                 },
               }
             );
+
+            // ✅ Save pending status immediately for Aadhaar
+            if (existing.length > 0) {
+              await bgService.updateOne(existing[0].id, { verifiedData });
+            } else {
+              await bgService.createOne({
+                employee: employeeId,
+                requestedAt: now,
+                verifiedData,
+              });
+            }
 
             const { url, token, client_id, expiry_seconds } = digiRes.data.data;
 
@@ -126,11 +136,11 @@ export default (router, { services, getSchema }) => {
           continue;
         }
 
-        // All other document types (PAN, Voter ID, etc.)
+        // ✅ Other document types (PAN, DL, Voter, etc.)
         const result = await verifyWithSurepass(
           documentType,
           documentNumber,
-          dobToUse
+          doc.dob || dobToUse
         );
 
         verifiedData[documentType].status = result.success
@@ -144,15 +154,17 @@ export default (router, { services, getSchema }) => {
         });
       }
 
-      // Update or create bgVerification record
-      if (existing.length > 0) {
-        await bgService.updateOne(existing[0].id, { verifiedData });
-      } else {
-        await bgService.createOne({
-          employee: employeeId,
-          requestedAt: now,
-          verifiedData,
-        });
+      // ✅ Save to bgVerification (if Aadhaar not handled already)
+      if (!documents.some((d) => d.documentType === "aadhaar")) {
+        if (existing.length > 0) {
+          await bgService.updateOne(existing[0].id, { verifiedData });
+        } else {
+          await bgService.createOne({
+            employee: employeeId,
+            requestedAt: now,
+            verifiedData,
+          });
+        }
       }
 
       return res.json({ success: true, results });
@@ -166,7 +178,7 @@ export default (router, { services, getSchema }) => {
     }
   });
 
-  // ✅ Aadhaar DigiLocker status check using client_id
+  // ✅ Aadhaar DigiLocker status check
   router.get("/aadhaar/status", async (req, res) => {
     try {
       const client_id = req.query.client_id;
@@ -208,7 +220,7 @@ export default (router, { services, getSchema }) => {
     }
   });
 
-  // ✅ Update status for verified/failed after final UI result
+  // ✅ Update verification status (UI confirms verified/failed)
   router.post("/update-status", async (req, res) => {
     try {
       const { employeeId, documents } = req.body;
@@ -244,15 +256,58 @@ export default (router, { services, getSchema }) => {
       for (const doc of documents) {
         const { documentType, status } = doc;
 
-        if (!documentType || !["verified", "failed"].includes(status)) continue;
+        if (!documentType || !["verified", "failed"].includes(status)) {
+          console.log(
+            `❌ Invalid or missing status for documentType: ${documentType}`
+          );
+          continue;
+        }
 
-        if (!verifiedData[documentType]) verifiedData[documentType] = {};
+        // Log if documentType is missing in current verifiedData
+        if (!verifiedData[documentType]) {
+          console.warn(
+            `⚠️ ${documentType} not found in existing verifiedData. Creating entry.`
+          );
+          verifiedData[documentType] = {};
+        }
 
+        console.log(
+          `📄 Updating '${documentType}' from '${verifiedData[documentType].status}' to '${status}'`
+        );
+        // verifiedData[documentType].status = status;
+        // verifiedData[documentType].verifiedAt = new Date().toISOString();
         verifiedData[documentType].status = status;
+        verifiedData[documentType].verifiedAt = new Date().toISOString();
+
+        if (status === "verified") {
+          if (!verifiedData[documentType].payment) {
+            verifiedData[documentType].payment = {
+              amount: 10,
+              currency: "INR",
+            };
+          }
+          verifiedData[documentType].payment.status = "verified";
+        }
+
         updatedDocs.push({ documentType, status });
       }
 
+      // Log the object before saving
+      console.log(
+        "🟡 Final verifiedData to save:",
+        JSON.stringify(verifiedData, null, 2)
+      );
+
       await bgService.updateOne(existing[0].id, { verifiedData });
+
+      console.log("🟢 Updated bgVerification ID:", existing[0].id);
+
+      // Confirm the update with a fresh read
+      const check = await bgService.readOne(existing[0].id);
+      console.log(
+        "🔁 Post-update verifiedData:",
+        JSON.stringify(check.verifiedData, null, 2)
+      );
 
       return res.json({
         success: true,
@@ -268,7 +323,7 @@ export default (router, { services, getSchema }) => {
     }
   });
 
-  // ✅ Helper for PAN, Voter ID, etc.
+  // ✅ Surepass helper for PAN, DL, UAN, etc.
   async function verifyWithSurepass(documentType, documentNumber, dob = "") {
     try {
       const SUREPASS_API_KEY =
