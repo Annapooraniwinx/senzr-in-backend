@@ -97,7 +97,7 @@ export default (router, { services, getSchema }) => {
                 },
               }
             );
-
+            console.log("✅ employeeId", employeeId);
             // ✅ Save pending status immediately for Aadhaar
             if (existing.length > 0) {
               await bgService.updateOne(existing[0].id, { verifiedData });

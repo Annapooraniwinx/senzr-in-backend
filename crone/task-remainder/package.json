@@ -1,21 +1,27 @@
 {
-	"name": "rfid",
+	"name": "task-remainder",
 	"description": "Please enter a description for your extension",
 	"icon": "extension",
 	"version": "1.0.0",
 	"keywords": [
 		"directus",
 		"directus-extension",
-		"directus-extension-hook"
+		"directus-extension-operation"
 	],
 	"type": "module",
 	"files": [
 		"dist"
 	],
 	"directus:extension": {
-		"type": "hook",
-		"path": "dist/index.js",
-		"source": "src/index.js",
+		"type": "operation",
+		"path": {
+			"app": "dist/app.js",
+			"api": "dist/api.js"
+		},
+		"source": {
+			"app": "src/app.js",
+			"api": "src/api.js"
+		},
 		"host": "^10.10.0"
 	},
 	"scripts": {
@@ -25,6 +31,12 @@
 		"validate": "directus-extension validate"
 	},
 	"devDependencies": {
-		"@directus/extensions-sdk": "13.1.0"
+		"@directus/extensions-sdk": "14.0.0",
+		"vue": "^3.5.17"
+	},
+	"dependencies": {
+		"dayjs": "^1.11.13",
+		"jspdf-autotable": "^5.0.2",
+		"nodemailer": "^7.0.5"
 	}
 }

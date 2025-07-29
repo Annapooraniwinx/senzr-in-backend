@@ -1,260 +1,3 @@
-// export default ({ action, filter }, { services }) => {
-//   const { ItemsService } = services;
-//   const processedItems = new Set();
-
-//   async function updateControllers(
-//     doorNumbers,
-//     tenantId,
-//     schema,
-//     accountability
-//   ) {
-//     if (!doorNumbers || doorNumbers.length === 0) {
-//       console.log("ℹ️ No door numbers found to update controllers.");
-//       return;
-//     }
-
-//     try {
-//       const controllerService = new ItemsService("controllers", {
-//         schema,
-//         accountability,
-//       });
-
-//       console.log("🔄 Updating controllers for tenant:", tenantId);
-
-//       for (let i = 0; i < doorNumbers.length; i += 50) {
-//         const batch = doorNumbers.slice(i, i + 50);
-//         console.log("📦 Processing controller batch:", batch);
-
-//         const controllers = await controllerService.readByQuery({
-//           filter: {
-//             _and: [
-//               { assignedDoor: { doors_id: { doorNumber: { _in: batch } } } },
-//               { tenant: { _eq: tenantId } },
-//             ],
-//           },
-//           fields: ["id"],
-//           limit: -1,
-//         });
-
-//         const controllerIds = controllers.map((c) => c.id);
-//         console.log("📊 Controller IDs to update:", controllerIds);
-
-//         for (let j = 0; j < controllerIds.length; j += 25) {
-//           const idBatch = controllerIds.slice(j, j + 25);
-//           console.log("✏️ Updating controller batch:", idBatch);
-
-//           await controllerService.updateMany(
-//             idBatch,
-//             { controllerStatus: "waiting" },
-//             { emitEvents: false }
-//           );
-//         }
-//       }
-
-//       console.log("✅ Controllers updated to 'waiting' state.");
-//     } catch (error) {
-//       console.error("❌ Controller update error:", error.message);
-//     }
-//   }
-
-//   action(
-//     "cardManagement.items.create",
-//     async (input, { schema, accountability }) => {
-//       console.log("📥 CREATE action triggered on cardManagement.");
-//       console.log("🧾 Raw input:", JSON.stringify(input, null, 2));
-
-//       let items = [];
-
-//       // Handle both single and multiple create events
-//       if (input.items) {
-//         items = Array.isArray(input.items) ? input.items : [input.items];
-//       } else if (input.payload) {
-//         items = [input.payload];
-//       }
-
-//       if (!items.length) {
-//         console.warn("⚠️ No valid cards to process during create.");
-//         return;
-//       }
-
-//       await processCardEvent(items, "create", { schema, accountability });
-//     }
-//   );
-
-//   action(
-//     "cardManagement.items.update",
-//     async (input, { schema, accountability }) => {
-//       console.log("📥 UPDATE action triggered on cardManagement.");
-
-//       const keys = input.keys || (input.key ? [input.key] : []);
-//       const cardService = new ItemsService("cardManagement", {
-//         schema,
-//         accountability,
-//       });
-//       const cards = await cardService.readMany(keys, {
-//         fields: ["id", "tenant.tenantId", "accessLevelsId"],
-//       });
-
-//       await processCardEvent(cards, "update", { schema, accountability });
-//     }
-//   );
-
-//   filter(
-//     "cardManagement.items.delete",
-//     async (payload, { schema, accountability }) => {
-//       const keys = payload.keys || [];
-
-//       console.log("🗑 DELETE filter triggered on cardManagement:", keys);
-
-//       const cardService = new ItemsService("cardManagement", {
-//         schema,
-//         accountability,
-//       });
-
-//       try {
-//         const cards = await cardService.readMany(keys, {
-//           fields: ["id", "tenant.tenantId", "accessLevelsId"],
-//         });
-
-//         await processCardEvent(cards, "delete", { schema, accountability });
-//       } catch (error) {
-//         console.error("❌ Error during delete pre-fetch:", error.message);
-//       }
-
-//       return payload;
-//     }
-//   );
-
-//   async function processCardEvent(
-//     cards,
-//     eventType,
-//     { schema, accountability }
-//   ) {
-//     if (!cards || typeof cards !== "object") {
-//       console.warn(
-//         `⚠️ Invalid cards data received during ${eventType}:`,
-//         cards
-//       );
-//       return;
-//     }
-
-//     const cardsArray = Array.isArray(cards) ? cards : [cards];
-//     const validCards = cardsArray.filter(
-//       (card) => card && typeof card === "object"
-//     );
-
-//     if (validCards.length === 0) {
-//       console.warn(`⚠️ No valid cards to process during ${eventType}.`);
-//       return;
-//     }
-
-//     const cardIds = validCards.map((c) => c.id).join(",");
-//     if (processedItems.has(cardIds)) {
-//       console.log(`🔁 Skipping duplicate processing for cards: ${cardIds}`);
-//       return;
-//     }
-//     processedItems.add(cardIds);
-
-//     try {
-//       for (const card of validCards) {
-//         const tenantId =
-//           typeof card.tenant === "object" ? card.tenant?.tenantId : card.tenant;
-//         const accessLevelsId = card.accessLevelsId;
-
-//         console.log(`📄 Processing card: ${card.id} for ${eventType}`);
-
-//         if (!tenantId || !accessLevelsId) {
-//           console.warn(
-//             `⚠️ Missing tenantId (${tenantId}) or accessLevelsId (${accessLevelsId}) for card:`,
-//             card.id
-//           );
-//           continue;
-//         }
-
-//         const accessLevelService = new ItemsService("accesslevels", {
-//           schema,
-//           accountability,
-//         });
-
-//         const accessLevels = await accessLevelService.readByQuery({
-//           filter: {
-//             _and: [
-//               { accessLevelNumber: { _eq: accessLevelsId } },
-//               { tenant: { _eq: tenantId } },
-//               { status: { _neq: "archived" } },
-//             ],
-//           },
-//           fields: ["id", "groupType", "assignDoorsGroup"],
-//           limit: 1,
-//         });
-
-//         if (!accessLevels || accessLevels.length === 0) {
-//           console.warn(
-//             "⚠️ Access level not found or archived for:",
-//             accessLevelsId
-//           );
-//           continue;
-//         }
-
-//         const accessLevel = accessLevels[0];
-
-//         if (accessLevel.groupType !== "doors") {
-//           console.log(
-//             "ℹ️ Skipping non-door access level group:",
-//             accessLevel.groupType
-//           );
-//           continue;
-//         }
-
-//         const doorGroups = accessLevel.assignDoorsGroup || [];
-//         if (doorGroups.length === 0) {
-//           console.log("ℹ️ No door groups assigned.");
-//           continue;
-//         }
-
-//         const doorsService = new ItemsService("doors", {
-//           schema,
-//           accountability,
-//         });
-
-//         const doors = await doorsService.readByQuery({
-//           filter: {
-//             _and: [
-//               { doorGroup: { _in: doorGroups } },
-//               { tenant: { _eq: tenantId } },
-//               { status: { _neq: "archived" } },
-//             ],
-//           },
-//           fields: ["doorNumber"],
-//           limit: -1,
-//         });
-
-//         const doorNumbers = doors.map((d) => d.doorNumber).filter(Boolean);
-
-//         console.log("📊 Door numbers fetched:", doorNumbers);
-
-//         if (doorNumbers.length > 0) {
-//           await updateControllers(
-//             doorNumbers,
-//             tenantId,
-//             schema,
-//             accountability
-//           );
-//         } else {
-//           console.log("ℹ️ No valid door numbers found.");
-//         }
-//       }
-//     } catch (error) {
-//       console.error(
-//         `❌ ${eventType.toUpperCase()} processing error:`,
-//         error.message
-//       );
-//     } finally {
-//       setTimeout(() => processedItems.delete(cardIds), 5000);
-//     }
-//   }
-// };
-
 export default ({ action, filter }, { services }) => {
   const { ItemsService } = services;
   const processedItems = new Set();
@@ -276,11 +19,8 @@ export default ({ action, filter }, { services }) => {
         accountability,
       });
 
-      console.log("🔄 Updating controllers for tenant:", tenantId);
-
       for (let i = 0; i < doorNumbers.length; i += 50) {
         const batch = doorNumbers.slice(i, i + 50);
-        console.log("📦 Processing controller batch:", JSON.stringify(batch));
 
         const controllers = await controllerService.readByQuery({
           filter: {
@@ -294,11 +34,9 @@ export default ({ action, filter }, { services }) => {
         });
 
         const controllerIds = controllers.map((c) => c.id);
-        console.log("🔢 Controller IDs to update:", controllerIds);
 
         for (let j = 0; j < controllerIds.length; j += 25) {
           const idBatch = controllerIds.slice(j, j + 25);
-          console.log("✏️ Updating controller ID batch:", idBatch);
 
           await controllerService.updateMany(
             idBatch,
@@ -317,9 +55,6 @@ export default ({ action, filter }, { services }) => {
   action(
     "cardManagement.items.create",
     async (input, { schema, accountability }) => {
-      console.log("🆕 CREATE action triggered on cardManagement.");
-      console.log("📦 Raw CREATE input:", JSON.stringify(input, null, 2));
-
       let items = [];
 
       if (input.items) {
@@ -340,9 +75,6 @@ export default ({ action, filter }, { services }) => {
   action(
     "cardManagement.items.update",
     async (input, { schema, accountability }) => {
-      console.log("🔧 UPDATE action triggered on cardManagement.");
-      console.log("📦 Raw UPDATE input:", JSON.stringify(input, null, 2));
-
       const keys = input.keys || (input.key ? [input.key] : []);
       const cardService = new ItemsService("cardManagement", {
         schema,
@@ -352,12 +84,6 @@ export default ({ action, filter }, { services }) => {
       const cards = await cardService.readMany(keys, {
         fields: ["id", "tenant.tenantId", "accessLevelsId"],
       });
-
-      console.log(
-        "🔍 Cards fetched for update:",
-        JSON.stringify(cards, null, 2)
-      );
-
       await processCardEvent(cards, "update", { schema, accountability });
     }
   );
@@ -366,9 +92,6 @@ export default ({ action, filter }, { services }) => {
     "cardManagement.items.delete",
     async (payload, { schema, accountability }) => {
       const keys = payload.keys || [];
-
-      console.log("🗑 DELETE filter triggered on cardManagement. Keys:", keys);
-
       const cardService = new ItemsService("cardManagement", {
         schema,
         accountability,
@@ -378,11 +101,6 @@ export default ({ action, filter }, { services }) => {
         const cards = await cardService.readMany(keys, {
           fields: ["id", "tenant.tenantId", "accessLevelsId"],
         });
-
-        console.log(
-          "🧹 Cards fetched for deletion:",
-          JSON.stringify(cards, null, 2)
-        );
 
         await processCardEvent(cards, "delete", { schema, accountability });
       } catch (error) {
@@ -426,10 +144,6 @@ export default ({ action, filter }, { services }) => {
           typeof card.tenant === "object" ? card.tenant?.tenantId : card.tenant;
         const accessLevelsId = card.accessLevelsId;
 
-        console.log(`🪪 Processing card ID: ${card.id} (${eventType})`);
-        console.log(`🏢 Tenant ID: ${tenantId}`);
-        console.log(`🛂 Access Level ID: ${accessLevelsId}`);
-
         if (!tenantId || !accessLevelsId) {
           console.warn("⚠️ Missing tenantId or accessLevelsId:", card);
           continue;
@@ -440,71 +154,223 @@ export default ({ action, filter }, { services }) => {
           accountability,
         });
 
-        const accessLevels = await accessLevelService.readByQuery({
-          filter: {
-            _and: [
-              { accessLevelNumber: { _eq: accessLevelsId } },
-              { tenant: { _eq: tenantId } },
-              { status: { _neq: "archived" } },
+        // Try multiple possible field mappings to find the access level
+        let accessLevels = [];
+
+        // First try: assume accessLevelsId maps to the 'id' field
+        try {
+          accessLevels = await accessLevelService.readByQuery({
+            filter: {
+              _and: [
+                { id: { _eq: accessLevelsId } },
+                { tenant: { _eq: tenantId } },
+              ],
+            },
+            fields: [
+              "id",
+              "groupType",
+              "assignDoorsGroup",
+              "assignDevicesGroup",
+              "accessLevelNumber",
             ],
-          },
-          fields: ["id", "groupType", "assignDoorsGroup"],
-          limit: 1,
-        });
+            limit: 1,
+          });
+        } catch (error) {
+          console.log("❌ Error querying by ID:", error.message);
+        }
+
+        // Second try: if not found by ID, try by accessLevelNumber
+        if (!accessLevels || accessLevels.length === 0) {
+          try {
+            accessLevels = await accessLevelService.readByQuery({
+              filter: {
+                _and: [
+                  { accessLevelNumber: { _eq: accessLevelsId } },
+                  { tenant: { _eq: tenantId } },
+                ],
+              },
+              fields: [
+                "id",
+                "groupType",
+                "assignDoorsGroup",
+                "assignDevicesGroup",
+                "accessLevelNumber",
+              ],
+              limit: 1,
+            });
+          } catch (error) {
+            console.log(
+              "❌ Error querying by accessLevelNumber:",
+              error.message
+            );
+          }
+        }
+
+        // Third try: convert to string and try again (in case of type mismatch)
+        if (!accessLevels || accessLevels.length === 0) {
+          try {
+            accessLevels = await accessLevelService.readByQuery({
+              filter: {
+                _and: [
+                  { accessLevelNumber: { _eq: String(accessLevelsId) } },
+                  { tenant: { _eq: tenantId } },
+                ],
+              },
+              fields: [
+                "id",
+                "groupType",
+                "assignDoorsGroup",
+                "assignDevicesGroup",
+                "accessLevelNumber",
+              ],
+              limit: 1,
+            });
+          } catch (error) {
+            console.log(
+              "❌ Error querying by accessLevelNumber (string):",
+              error.message
+            );
+          }
+        }
+
+        // Fourth try: try as number (in case it's stored as number)
+        if (!accessLevels || accessLevels.length === 0) {
+          try {
+            accessLevels = await accessLevelService.readByQuery({
+              filter: {
+                _and: [
+                  { accessLevelNumber: { _eq: Number(accessLevelsId) } },
+                  { tenant: { _eq: tenantId } },
+                ],
+              },
+              fields: [
+                "id",
+                "groupType",
+                "assignDoorsGroup",
+                "assignDevicesGroup",
+                "accessLevelNumber",
+              ],
+              limit: 1,
+            });
+          } catch (error) {
+            console.log(
+              "❌ Error querying by accessLevelNumber (number):",
+              error.message
+            );
+          }
+        }
 
         if (!accessLevels || accessLevels.length === 0) {
-          console.warn("⚠️ No active access level found for:", accessLevelsId);
+          console.warn(
+            "⚠️ No access level found for accessLevelsId:",
+            accessLevelsId,
+            "tenant:",
+            tenantId
+          );
+
+          // Debug: Let's see what access levels exist for this tenant
+          try {
+            const allAccessLevels = await accessLevelService.readByQuery({
+              filter: {
+                tenant: { _eq: tenantId },
+              },
+              fields: ["id", "accessLevelNumber", "groupType"],
+              limit: 10,
+            });
+          } catch (debugError) {
+            console.log(
+              "❌ Error fetching all access levels for debug:",
+              debugError.message
+            );
+          }
+
           continue;
         }
 
         const accessLevel = accessLevels[0];
 
-        if (accessLevel.groupType !== "doors") {
-          console.log(
-            "🚫 Skipping non-door access level group:",
-            accessLevel.groupType
-          );
-          continue;
-        }
+        if (accessLevel.groupType === "doors") {
+          const doorGroups = accessLevel.assignDoorsGroup || [];
+          if (doorGroups.length === 0) {
+            console.log("🚫 No door groups assigned.");
+            continue;
+          }
 
-        const doorGroups = accessLevel.assignDoorsGroup || [];
-        if (doorGroups.length === 0) {
-          console.log("🚫 No door groups assigned.");
-          continue;
-        }
-
-        console.log("🚪 Fetching doors from groups:", doorGroups);
-
-        const doorsService = new ItemsService("doors", {
-          schema,
-          accountability,
-        });
-
-        const doors = await doorsService.readByQuery({
-          filter: {
-            _and: [
-              { doorGroup: { _in: doorGroups } },
-              { tenant: { _eq: tenantId } },
-              { status: { _neq: "archived" } },
-            ],
-          },
-          fields: ["doorNumber"],
-          limit: -1,
-        });
-
-        const doorNumbers = doors.map((d) => d.doorNumber).filter(Boolean);
-
-        console.log("🔐 Door numbers fetched:", doorNumbers);
-
-        if (doorNumbers.length > 0) {
-          await updateControllers(
-            doorNumbers,
-            tenantId,
+          const doorsService = new ItemsService("doors", {
             schema,
-            accountability
-          );
+            accountability,
+          });
+
+          const doors = await doorsService.readByQuery({
+            filter: {
+              _and: [
+                { id: { _in: doorGroups } },
+                { tenant: { _eq: tenantId } },
+              ],
+            },
+            fields: ["doorNumber"],
+            limit: -1,
+          });
+
+          const doorNumbers = doors.map((d) => d.doorNumber).filter(Boolean);
+
+          if (doorNumbers.length > 0) {
+            await updateControllers(
+              doorNumbers,
+              tenantId,
+              schema,
+              accountability
+            );
+          } else {
+            console.log("❗ No valid door numbers found for update.");
+          }
+        } else if (accessLevel.groupType === "devices") {
+          const deviceControllers = accessLevel.assignDevicesGroup || [];
+          if (deviceControllers.length === 0) {
+            console.log("🚫 No device controllers assigned.");
+            continue;
+          }
+
+          const controllerService = new ItemsService("controllers", {
+            schema,
+            accountability,
+          });
+
+          const controllerData = await controllerService.readByQuery({
+            filter: {
+              _and: [
+                { id: { _in: deviceControllers } },
+                { tenant: { _eq: tenantId } },
+              ],
+            },
+            fields: ["assignedDoor.doors_id.doorNumber"],
+            limit: -1,
+          });
+
+          const doorNumbers = controllerData
+            .flatMap((c) => {
+              if (Array.isArray(c.assignedDoor)) {
+                return c.assignedDoor
+                  .map((door) => door.doors_id?.doorNumber)
+                  .filter(Boolean);
+              }
+              return [];
+            })
+            .filter(Boolean);
+          if (doorNumbers.length > 0) {
+            await updateControllers(
+              doorNumbers,
+              tenantId,
+              schema,
+              accountability
+            );
+          } else {
+            console.log(
+              "❗ No valid door numbers found in device controllers."
+            );
+          }
         } else {
-          console.log("❗ No valid door numbers found for update.");
+          console.log("🚫 Unsupported groupType:", accessLevel.groupType);
         }
       }
     } catch (error) {
