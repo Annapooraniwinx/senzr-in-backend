@@ -297,11 +297,12 @@ export default ({ action }, { services }) => {
 
             for (let i = 0; i < doorGroups.length; i += 100) {
               const batch = doorGroups.slice(i, i + 100);
+              console.log("🚪batch door id ", batch, tenantId);
 
               const doors = await doorsService.readByQuery({
                 filter: {
                   _and: [
-                    { id: { _in: batch } },
+                    { id: { _in: doorGroups } },
                     { tenant: { tenantId: { _eq: tenantId } } },
                   ],
                 },

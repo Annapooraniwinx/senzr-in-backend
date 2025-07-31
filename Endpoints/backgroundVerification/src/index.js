@@ -73,7 +73,7 @@ export default (router, { services, getSchema }) => {
         if (documentType === "aadhaar") {
           try {
             const SUREPASS_API_KEY =
-              "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MTQ1OTUxOCwianRpIjoiODIxMjhkNTctZGM4ZS00MzcxLWI0YzUtOWViMWJiMmI5ODU2IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTE0NTk1MTgsImV4cCI6MTc1NDA1MTUxOCwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.vr3OctRUNgnLHCvSU6IZkQwfQZBFKwb_-NP-gSlAe7Y";
+              "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MzcwMjc3OCwianRpIjoiYmIwZGUwY2MtODdmZC00ZWQzLWE5MDUtMTI1OThiYWI5MjVkIiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTM3MDI3NzgsImV4cCI6MTc1NDk5ODc3OCwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.INN7SRy_BCgjFW-b6NzUyIROuexGciBBlEfO6_AAfEY";
 
             const digiRes = await axios.post(
               "https://sandbox.surepass.app/api/v1/digilocker/initialize",
@@ -191,7 +191,7 @@ export default (router, { services, getSchema }) => {
       }
 
       const SUREPASS_API_KEY =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MTQ1OTUxOCwianRpIjoiODIxMjhkNTctZGM4ZS00MzcxLWI0YzUtOWViMWJiMmI5ODU2IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTE0NTk1MTgsImV4cCI6MTc1NDA1MTUxOCwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.vr3OctRUNgnLHCvSU6IZkQwfQZBFKwb_-NP-gSlAe7Y";
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MzcwMjc3OCwianRpIjoiYmIwZGUwY2MtODdmZC00ZWQzLWE5MDUtMTI1OThiYWI5MjVkIiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTM3MDI3NzgsImV4cCI6MTc1NDk5ODc3OCwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.INN7SRy_BCgjFW-b6NzUyIROuexGciBBlEfO6_AAfEY";
 
       const response = await axios.get(
         `https://sandbox.surepass.io/api/v1/digilocker/download-aadhaar/${client_id}`,
@@ -327,7 +327,7 @@ export default (router, { services, getSchema }) => {
   async function verifyWithSurepass(documentType, documentNumber, dob = "") {
     try {
       const SUREPASS_API_KEY =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MTQ1OTUxOCwianRpIjoiODIxMjhkNTctZGM4ZS00MzcxLWI0YzUtOWViMWJiMmI5ODU2IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTE0NTk1MTgsImV4cCI6MTc1NDA1MTUxOCwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.vr3OctRUNgnLHCvSU6IZkQwfQZBFKwb_-NP-gSlAe7Y";
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MzcwMjc3OCwianRpIjoiYmIwZGUwY2MtODdmZC00ZWQzLWE5MDUtMTI1OThiYWI5MjVkIiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTM3MDI3NzgsImV4cCI6MTc1NDk5ODc3OCwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.INN7SRy_BCgjFW-b6NzUyIROuexGciBBlEfO6_AAfEY";
 
       let endpoint = "";
       let requestBody = {};
@@ -347,14 +347,18 @@ export default (router, { services, getSchema }) => {
           requestBody = { id_number: documentNumber, dob };
           break;
         case "uan":
-          endpoint = "https://sandbox.surepass.app/api/v1/uan/uan";
-          requestBody = { id_number: documentNumber };
+          endpoint =
+            "https://sandbox.surepass.io/api/v1/income/epfo/aadhaar-to-uan";
+          requestBody = { aadhaar_number: documentNumber };
           break;
         case "bank_account":
-          const [account_number, ifsc] = documentNumber.split("-");
           endpoint =
-            "https://sandbox.surepass.app/api/v1/bank-verification/account";
-          requestBody = { account_number, ifsc };
+            "https://sandbox.surepass.io/api/v1/bank-verification/mobile-to-account";
+          requestBody = { mobile_number: documentNumber };
+          break;
+        case "esic":
+          endpoint = "https://sandbox.surepass.io/api/v1/esic/esic-v2";
+          requestBody = { id_number: documentNumber };
           break;
         default:
           throw new Error(`Unsupported document type: ${documentType}`);
