@@ -70,6 +70,8 @@ var src = function registerEndpoint(router, { services }) {
           "employeeId",
           "assignedUser.first_name",
           "assignedUser.gender",
+          "assignedUser.PFAccountNumber",
+          "assignedUser.ESIAccountNumber",
           "salaryConfig.basicPay",
           "salaryConfig.stateTaxes.state",
           "salaryConfig.bonusConfig",
@@ -124,9 +126,12 @@ var src = function registerEndpoint(router, { services }) {
           "config.attendancePolicies.workinghrsDaysLimit",
           "config.attendancePolicies.wrkHoursDayMode",
           "config.attendancePolicies.earlyExitPenaltyAmt",
-          "config.attendancePolicy.extraHoursPay ",
-          "config.attendancePolicy.weekOffPay",
-          "config.attendancePolicy.publicHolidayPay",
+          "config.attendancePolicies.extraHoursPay ",
+          "config.attendancePolicies.weekOffPay",
+          "config.attendancePolicies.publicHolidayPay",
+          "config.attendancePolicies.weekOffType",
+          "config.attendancePolicies.publicHolidayType",
+          "config.aattendancePolicies.extraHoursType",
           "config.attendanceSettings",
         ],
         sort: ["-date_updated"],
@@ -153,6 +158,7 @@ var src = function registerEndpoint(router, { services }) {
           "basicPay",
           "earnings",
           "employersContribution",
+
           "individualDeduction",
           "voluntaryPF",
           "salaryArrears",
@@ -201,9 +207,6 @@ var src = function registerEndpoint(router, { services }) {
           limit: -1,
         });
 
-      console.log(
-        `Found ${payrollVerificationData.length} payroll verification records`
-      );
       const shouldIncludeManualBenefit = (item) => {
         if (!item || !item.amount || !item.month) return false;
         return item.month === new Date(endDate).getMonth() + 1;
@@ -224,6 +227,7 @@ var src = function registerEndpoint(router, { services }) {
         const basicPay = Number(salaryInfo?.basicPay || 0);
         const adjustedBasicPay = (basicPay / Number(totalDays)) * payableDays;
         const stateTax = personal?.salaryConfig?.stateTaxes?.stateTaxRules;
+        const monthlyEarnings = salaryInfo?.totalEarnings;
         const monthlyCTC = salaryInfo?.basicSalary;
 
         const adjustedEarnings = {};
@@ -245,10 +249,18 @@ var src = function registerEndpoint(router, { services }) {
         const employerContributions = ["EmployerPF", "EmployerESI"].map(
           (type) => {
             const config = employerContributionsConfig[type];
+            const includedInCTC =
+              salaryInfo?.employersContribution?.[type]?.includedInCTC ??
+              config?.withinCTC;
+
             if (
               !config ||
               config.selectedOption === null ||
-              !config.withinCTC
+              !includedInCTC ||
+              (type === "EmployerPF" &&
+                !personal.assignedUser.PFAccountNumber) ||
+              (type === "EmployerESI" &&
+                !personal.assignedUser.ESIAccountNumber)
             ) {
               return {
                 name: type,
@@ -271,7 +283,7 @@ var src = function registerEndpoint(router, { services }) {
                 finalValue = totalAmount * (config.selectedOption / 100);
               }
             } else if (type === "EmployerESI") {
-              if (monthlyCTC.value <= 21000) {
+              if (monthlyCTC <= 21000) {
                 finalValue = Math.min(
                   totalAmount * (config.selectedOption / 100),
                   682.5
@@ -292,7 +304,12 @@ var src = function registerEndpoint(router, { services }) {
           personal?.salaryConfig?.employeeDeductions ?? {};
         const employeeDeductions = ["EmployeePF", "EmployeeESI"].map((type) => {
           const config = employeeDeductionsConfig[type];
-          if (!config || config.selectedOption === null) {
+          if (
+            !config ||
+            config.selectedOption === null ||
+            (type === "EmployeePF" && !personal.assignedUser.PFAccountNumber) ||
+            (type === "EmployeeESI" && !personal.assignedUser.ESIAccountNumber)
+          ) {
             return {
               name: type,
               rupee: 0,
@@ -313,7 +330,7 @@ var src = function registerEndpoint(router, { services }) {
               finalValue = totalAmount * (config.selectedOption / 100);
             }
           } else if (type === "EmployeeESI") {
-            if (monthlyCTC.value <= 21000) {
+            if (monthlyCTC <= 21000) {
               finalValue = totalAmount * (config.selectedOption / 100);
             } else {
               finalValue = 0;
@@ -325,11 +342,71 @@ var src = function registerEndpoint(router, { services }) {
             rupee: Math.round(finalValue),
           };
         });
+        const employerContributionsFull = ["EmployerPF", "EmployerESI"].map(
+          (type) => {
+            const config = employerContributionsConfig[type];
+            if (
+              !config ||
+              config.selectedOption === null ||
+              (type === "EmployerPF" &&
+                !personal.assignedUser.PFAccountNumber) ||
+              (type === "EmployerESI" &&
+                !personal.assignedUser.ESIAccountNumber)
+            ) {
+              return {
+                name: type,
+                rupee: 0,
+              };
+            }
+            const calculations = Array.isArray(config.Calculations)
+              ? config.Calculations
+              : [];
+            const totalAmount = calculations.reduce((sum, calc) => {
+              const earningAmount = adjustedEarnings[calc.name] || 0;
+              return sum + earningAmount;
+            }, 0);
+
+            let finalValue = 0;
+            if (type === "EmployerPF") {
+              if (config.selectedOption === 1800) {
+                finalValue = Math.min(totalAmount * (12 / 100), 1800);
+              } else {
+                finalValue = totalAmount * (config.selectedOption / 100);
+              }
+            } else if (type === "EmployerESI") {
+              if (monthlyCTC <= 21000) {
+                finalValue = Math.min(
+                  totalAmount * (config.selectedOption / 100),
+                  682.5
+                );
+              } else {
+                finalValue = 0;
+              }
+            }
+
+            return {
+              name: type,
+              totalAmount: totalAmount,
+              rupee: Math.round(finalValue),
+            };
+          }
+        );
 
         const adminConfig = personal?.salaryConfig?.adminCharges;
+        const employerPFIncludedInCTC =
+          salaryInfo?.employersContribution?.EmployerPF?.includedInCTC ??
+          employerContributionsConfig["EmployerPF"]?.withinCTC;
+          let adminChargeWithoutCtc = { name: "adminCharge", rupee: 0 };
+        if (personal.assignedUser.PFAccountNumber) {
+          if (adminConfig?.enable) {
+            const calculated =
+              (Number(adminConfig.charge) / 100) * employerPFContribution;
+            adminChargeWithoutCtc.rupee = Math.round(Math.min(calculated, 150));
+          }
+        }
 
         let adminChargeContribution = { name: "AdminCharge", rupee: 0 };
-        if (employerContributionsConfig["EmployerPF"]?.withinCTC) {
+        if (employerPFIncludedInCTC && personal.assignedUser.PFAccountNumber) {
           if (adminConfig?.enable) {
             const calculated =
               (Number(adminConfig.charge) / 100) * employerPFContribution;
@@ -338,6 +415,7 @@ var src = function registerEndpoint(router, { services }) {
             );
           }
         }
+        
 
         const deductionDates = stateTax?.LWF?.Deduction || [];
         const lwfApplicable = deductionDates.some((date) => {
@@ -383,7 +461,7 @@ var src = function registerEndpoint(router, { services }) {
         }
 
         let voluntaryPFAmount = 0;
-        const voluntary = personal?.salaryConfig?.voluntaryPF;
+        const voluntary = salaryInfo?.voluntaryPF;
         if (voluntary?.VoluntaryPF?.type === "percentage") {
           const vp = voluntary.VoluntaryPF;
           const calculations = Array.isArray(vp.Calculations)
@@ -412,12 +490,8 @@ var src = function registerEndpoint(router, { services }) {
               voluntaryPFAmount = totalAmount * (percentageOption.value / 100);
             }
           }
-        } else if (voluntary?.VoluntaryPF?.type === "amount") {
+        } else if (voluntary?.VoluntaryPF?.type === "fixed") {
           voluntaryPFAmount = voluntary.VoluntaryPF.amount || 0;
-        }
-
-        if (voluntaryPFAmount) {
-          voluntaryPFAmount = 0;
         }
 
         const bonusManual =
@@ -444,60 +518,131 @@ var src = function registerEndpoint(router, { services }) {
                 .reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
             : 0;
 
-        let allowedLateEntry = 0;
-        let actualLateEntryCount = 0;
-        let lateEntryPenalty = 0;
+        const perDaySalary = monthlyEarnings / Number(totalDays);
+        const perHourSalary = perDaySalary / 9;
 
+        let lateEntryPenalty = 0;
         const attendancePolicy = personal?.config?.attendancePolicies;
         const totalAttendanceCount = payrollData?.totalAttendanceCount || {};
 
-        if (
-          attendancePolicy?.lateComingType === "fixed" &&
-          Number(attendancePolicy.lateEntryAllowed) > 0
-        ) {
-          allowedLateEntry = Number(attendancePolicy.lateEntryAllowed);
-          const lateComingCount = totalAttendanceCount.lateComing || 0;
-          actualLateEntryCount = Math.max(
-            lateComingCount - allowedLateEntry,
-            0
-          );
+        if (attendancePolicy?.lateComingType === "fixed") {
           const penaltyAmount = Number(
             attendancePolicy.lateEntryPenaltyAmt || 0
           );
-          lateEntryPenalty = actualLateEntryCount * penaltyAmount;
+          const hoursOnly = Number(
+            totalAttendanceCount.totalLateDuration.split(":")[0]
+          );
+
+          if (attendancePolicy.lateComingDayMode === "Custom Multiplier") {
+            lateEntryPenalty = penaltyAmount * perHourSalary * hoursOnly;
+          } else {
+            lateEntryPenalty = penaltyAmount * hoursOnly;
+          }
         }
 
-        let allowedEarlyLeaving = 0;
-        let actualEarlyLeavingCount = 0;
+        let lateLeave = {};
+        if (totalAttendanceCount?.lateData?.leave) {
+          const leaveCount = totalAttendanceCount?.lateComing;
+          const leave = totalAttendanceCount?.lateData?.leave;
+          lateLeave = { count: leaveCount, leave: leave };
+        }
+
         let earlyLeavingPenalty = 0;
 
-        if (
-          attendancePolicy?.earlyLeavingType === "fixed" &&
-          Number(attendancePolicy.earlyExitAllowed) > 0
-        ) {
-          allowedEarlyLeaving = Number(attendancePolicy.earlyExitAllowed);
-          const earlyLeavingCount = totalAttendanceCount.earlyLeaving || 0;
-          actualEarlyLeavingCount = Math.max(
-            earlyLeavingCount - allowedEarlyLeaving,
-            0
-          );
+        if (attendancePolicy?.earlyLeavingType === "fixed") {
           const penaltyAmount = Number(
             attendancePolicy.earlyExitPenaltyAmt || 0
           );
-          earlyLeavingPenalty = actualEarlyLeavingCount * penaltyAmount;
+          const hoursOnly = Number(
+            totalAttendanceCount.totalEarlyDuration.split(":")[0]
+          );
+
+          if (attendancePolicy.earlyLeavingDayMode === "Custom Multiplier") {
+            earlyLeavingPenalty = penaltyAmount * perHourSalary * hoursOnly;
+          } else {
+            earlyLeavingPenalty = penaltyAmount * hoursOnly;
+          }
         }
 
-        const workingDayOT = totalAttendanceCount.workingDayOT || 0;
-        const weekOffOT = totalAttendanceCount.weekOffOT || 0;
-        const holidayOT = totalAttendanceCount.holidayOT || 0;
+        let earlyLeave = {};
+        if (totalAttendanceCount?.earlyLeavingData?.leave) {
+          const leaveCount = totalAttendanceCount?.earlyLeaving;
+          const leave = totalAttendanceCount?.earlyLeavingData?.leave;
+          earlyLeave = { count: leaveCount, leave: leave };
+        }
 
-        const workingDayOTPay =
-          workingDayOT * Number(attendancePolicy?.extraHoursPay || 0);
-        const weekOffOTPay =
-          weekOffOT * Number(attendancePolicy?.weekOffPay || 0);
-        const holidayOTPay =
-          holidayOT * Number(attendancePolicy?.publicHolidayPay || 0);
+        let workingHourPenalty = 0;
+        if (attendancePolicy?.workingHoursType === "fixed") {
+          const penaltyAmount = Number(
+            attendancePolicy.workingHoursAmount || 0
+          );
+          workingHourPenalty =
+            totalAttendanceCount.workingHours * penaltyAmount;
+        }
 
+        let workingHourLeave = {};
+        if (totalAttendanceCount?.workingHoursData?.leave) {
+          const leaveCount = totalAttendanceCount?.workingHours || 0;
+          const leave = totalAttendanceCount?.workingHoursData?.leave;
+          workingHourLeave = { count: leaveCount, leave: leave };
+        }
+        const workingHoursOT =
+          parseInt(totalAttendanceCount.workingDayOTHours?.split(":")[0]) || 0;
+        const weekOffOT =
+          parseInt(totalAttendanceCount.weekOffOTHours?.split(":")[0]) || 0;
+        const holidayOT =
+          parseInt(totalAttendanceCount.holidayOTHours?.split(":")[0]) || 0;
+
+        let weekOffOTPay = 0;
+
+        if (weekOffOT) {
+          switch (attendancePolicy?.weekOffType) {
+            case "Custom Multiplier":
+              weekOffOTPay =
+                weekOffOT *
+                (Number(attendancePolicy?.weekOffPay || 1) * perHourSalary);
+              break;
+            case "Fixed Hourly Rate":
+              weekOffOTPay =
+                weekOffOT * Number(attendancePolicy?.weekOffPay || 0);
+              break;
+            default:
+              weekOffOTPay = 0;
+          }
+        }
+        let workingHoursOTPay = 0;
+        if (workingHoursOT) {
+          switch (attendancePolicy?.workingHoursType) {
+            case "Custom Multiplier":
+              workingHoursOTPay =
+                workingHoursOT *
+                (Number(attendancePolicy?.workingHoursPay || 1) *
+                  perHourSalary);
+              break;
+            case "Fixed Hourly Rate":
+              workingHoursOTPay =
+                workingHoursOT * Number(attendancePolicy?.extraHoursPay || 0);
+              break;
+            default:
+              workingHoursOTPay = 0;
+          }
+        }
+        let holidayOTPay = 0;
+        if (holidayOT) {
+          switch (attendancePolicy?.publicHolidayType) {
+            case "Custom Multiplier":
+              holidayOTPay =
+                holidayOT *
+                (Number(attendancePolicy?.holidayPay || 1) * perHourSalary);
+              break;
+            case "Fixed Hourly Rate":
+              holidayOTPay =
+                holidayOT * Number(attendancePolicy?.holidayPay || 0);
+              break;
+            default:
+              holidayOTPay = 0;
+          }
+        }
         const totalEarnings =
           Object.values(adjustedEarnings).reduce((sum, val) => sum + val, 0) +
           employerContributions.reduce(
@@ -506,7 +651,10 @@ var src = function registerEndpoint(router, { services }) {
           ) +
           (adminChargeContribution?.rupee || 0) +
           (employerLwf || 0) +
-          totalSalaryArrearAmount;
+          totalSalaryArrearAmount +
+          holidayOTPay +
+          workingHoursOTPay +
+          weekOffOTPay;
 
         const endMonth = new Date(endDate).getMonth() + 1;
         let pt = 0;
@@ -549,11 +697,17 @@ var src = function registerEndpoint(router, { services }) {
           (adminChargeContribution?.rupee || 0) +
           Object.values(otherDeductions).reduce((sum, val) => sum + val, 0) +
           (pt || 0) +
-          (employeeLwf || 0);
+          (employeeLwf || 0) +
+          voluntaryPFAmount;
+
+        const totalBenefits =
+          bonusManual + incentiveManual + retentionPayManual;
+
         return {
           // ...personal,
           data: payrollVerificationData,
           salaryBreakdown: salaryInfo || null,
+          employeePf: salaryInfo.employeeDeduction?.EmployeePF || 0,
           monthlyCtc: salaryInfo.basicSalary,
           payrollId: payrollData?.id || null,
           id: payrollData?.employee?.id || null,
@@ -562,28 +716,39 @@ var src = function registerEndpoint(router, { services }) {
           deduction: adjustedDeductions,
           employerContributions,
           employeeDeductions,
+          employerContributionsFull,
+          admin:adminChargeWithoutCtc,
           employerLwf,
           employeeLwf,
           pt,
           otherDeductions,
           salaryArrears: pendingEarnings,
           adminCharge: adminChargeContribution,
+
           voluntaryPFAmount,
           bonusManual,
           incentiveManual,
           retentionPayManual,
+
           latePenalty: lateEntryPenalty,
+          lateLeave,
           earlyLeavingPenalty: earlyLeavingPenalty,
-          workingDayOTPay,
+          earlyLeave,
+          workingHourPenalty,
+          workingHourLeave,
+          workingHoursOTPay,
           weekOffOTPay,
           holidayOTPay,
           payableDays,
           totalEarnings,
           totalDeductions,
+          totalBenefits,
+          perHourSalary,
+          perDaySalary,
+           perDaySalary,
+          
         };
       });
-
-      console.log(`Returning ${combinedData.length} combined employee records`);
 
       return res.json({
         data: combinedData,

@@ -175,6 +175,10 @@ module.exports = function registerEndpoint(router, { services }) {
       const currentYear = now.getFullYear();
       const currentMonth = now.getMonth() + 1;
 
+      const userIdFilter = req.query.filter?._and?.[1]?._or || [];
+    const userId = userIdFilter[0]?.approver?.id?._eq || 
+                  userIdFilter[1]?.assignedUser?.id?._eq;
+
       const { startDate, endDate } = calculateDateRange(
         currentYear,
         currentMonth,
@@ -203,6 +207,15 @@ module.exports = function registerEndpoint(router, { services }) {
         });
       }
 
+       if (userId) {
+      personalModuleFilter._and.push({
+        _or: [
+          { approver: { id: { _eq: userId } } },  
+          { assignedUser: { id: { _eq: userId } } }
+        ]
+      });
+    }
+
       const totalEmployeesResult = await personalModuleService.readByQuery({
         filter: personalModuleFilter,
         fields: ["id"],
@@ -222,6 +235,7 @@ module.exports = function registerEndpoint(router, { services }) {
           "assignedBranch.branch_id.branchName",
           "assignedUser.id",
           "reportingManager",
+          "approver.id",
         ],
         limit: limit,
         offset: offset,

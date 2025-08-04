@@ -6,30 +6,42 @@ module.exports = function registerEndpoint(router, { services }) {
     absent: 0,
     weekOff: 0,
     holiday: 0,
-    onDuty: 0,
     workFromHome: 0,
+    onDuty: 0,
+    holidayPresent: 0,
+    weekoffPresent: 0,
+
     halfDay: 0,
     paidLeave: 0,
     unpaidLeave: 0,
-    holidayPresent: 0,
-    weekoffPresent: 0,
-    earlyLeaving: 0,
+
     earlyLeavingCount: 0,
     earlyLeavingAllowed: 0,
+    earlyLeaving: 0,
     earlyLeavingData: {},
-    lateComing: 0,
-    lateComingAllowed: 0,
-    workingDayOT: 0,
-    weekOffOT: 0,
-    holidayOT: 0,
-    lateData: {},
+    totalEarlyDuration: "00:00:00",
+
     lateEntryCount: 0,
-    workFromHomeOT: 0,
-    totalPayableDays: 0,
+    lateComingAllowed: 0,
+    lateComing: 0,
+    lateData: {},
+    totalLateDuration: "00:00:00",
+
     workingHoursCount: 0,
-    workingHours: 0,
     workingHoursAllowed: 0,
+    workingHours: 0,
     workingHoursData: {},
+
+    workingDayOT: 0,
+    workingDayOTHours: "00:00:00",
+    weekOffOT: 0,
+    weekOffOTHours: "00:00:00",
+    holidayOT: 0,
+    holidayOTHours: "00:00:00",
+    workFromHomeOT: 0,
+    workFromHomeOTHours: "00:00:00",
+
+    totalPayableDays: 0,
   };
 
   router.get("/", async (req, res) => {
@@ -135,6 +147,7 @@ module.exports = function registerEndpoint(router, { services }) {
             "earlyDeparture",
             "lateBy",
             "overTime",
+            "workHours",
           ],
           limit: -1,
         });
@@ -178,6 +191,7 @@ module.exports = function registerEndpoint(router, { services }) {
             "config.attendancePolicies.publicHolidayType",
             "config.attendancePolicies.extraHoursType",
             "config.attendanceSettings",
+            "leaves.leaveBalance",
           ],
           sort: ["-date_updated"],
           limit: -1,
@@ -191,9 +205,12 @@ module.exports = function registerEndpoint(router, { services }) {
 
         const result = {};
         paginatedEmployeeIds.forEach((empId) => {
+          const employeeLeaveBalance =
+            personalModuleMap[empId]?.leaves?.leaveBalance || {};
           result[empId] = {
             employeeId: empId,
             ...structuredClone(ALL_TYPES),
+            leaveBalance: employeeLeaveBalance,
           };
         });
 
@@ -232,13 +249,14 @@ module.exports = function registerEndpoint(router, { services }) {
             personalModuleMap[record.employeeId]?.config?.attendancePolicies
               ?.workinghrsDaysLimit;
           empData.workingHoursAllowed = workingHoursAllowed;
+
           if (
             record.earlyDeparture !== "00:00:00" &&
             record.earlyDeparture >
               personalModuleMap[record.employeeId]?.config?.attendancePolicies
                 ?.setExitTimeLimit
           ) {
-            empData.earlyExitCount += 1;
+            empData.earlyLeavingCount += 1;
 
             const earlyLeavingType =
               personalModuleMap[record.employeeId]?.config?.attendancePolicies
@@ -250,11 +268,14 @@ module.exports = function registerEndpoint(router, { services }) {
               personalModuleMap[record.employeeId]?.config?.attendancePolicies
                 ?.earlyLeavingLeave;
 
-            const exceededCount = empData.earlyExitCount - earlyExitAllowed;
+            const exceededCount = empData.earlyLeavingCount - earlyExitAllowed;
             if (exceededCount <= 0) return;
 
             if (earlyLeavingType === "lop") {
-              empData.earlyData = { mode: dayMode };
+              empData.earlyLeavingData = {
+                mode: dayMode,
+                leave: earlyLeavingType,
+              };
               if (dayMode === "quarterDay") {
                 empData.earlyLeaving += 0.25;
                 empData.totalPayableDays -= 0.25;
@@ -266,20 +287,35 @@ module.exports = function registerEndpoint(router, { services }) {
                 empData.totalPayableDays -= 1;
               }
             } else if (earlyLeavingType === "leave") {
-              empData.earlyData = { mode: dayMode, leave: leaveType };
-              if (dayMode === "quarterDay") {
+              const [h, m, s] = record.earlyDeparture.split(":").map(Number);
+              const totalHours = h + m / 60 + s / 3600;
+
+              empData.earlyLeavingData = { leave: leaveType };
+
+              if (totalHours <= 2) {
                 empData.earlyLeaving += 0.25;
-                empData.totalPayableDays -= 0.25;
-              } else if (dayMode === "halfDay") {
+                empData.earlyLeavingData.mode = "Quarter Day";
+              } else if (totalHours <= 4) {
                 empData.earlyLeaving += 0.5;
-                empData.totalPayableDays -= 0.5;
+                empData.earlyLeavingData.mode = "Half Day";
+              } else if (totalHours <= 6) {
+                empData.earlyLeaving += 0.75;
+                empData.earlyLeavingData.mode = "0.75 Day";
               } else {
                 empData.earlyLeaving += 1;
-                empData.totalPayableDays -= 1;
+                empData.earlyLeavingData.mode = "Full Day";
               }
-            } else {
+            } else if (earlyLeavingType === "fixed") {
               empData.earlyLeaving += 1;
-              empData.totalPayableDays -= 1;
+
+              empData.totalEarlyDuration = addTime(
+                empData.totalEarlyDuration || "00:00:00",
+                record.earlyDeparture
+              );
+              empData.earlyLeavingData = {
+                mode: "fixed",
+                leave: empData.totalEarlyDuration,
+              };
             }
           }
 
@@ -305,30 +341,51 @@ module.exports = function registerEndpoint(router, { services }) {
             if (exceededCount <= 0) return;
 
             if (lateComingType === "lop") {
-              empData.lateData = { mode: dayMode };
+              empData.lateData = { mode: dayMode, leave: lateComingType };
               if (dayMode === "quarter") {
                 empData.lateComing += 0.25;
+                empData.totalPayableDays -= 0.25;
               } else if (dayMode === "half") {
                 empData.lateComing += 0.5;
+                empData.totalPayableDays -= 0.5;
               } else {
                 empData.lateComing += 1;
+                empData.totalPayableDays -= 1;
               }
             } else if (lateComingType === "leave") {
-              empData.lateData = { mode: dayMode, leave: leaveType };
-              if (dayMode === "quarter") {
+              const [h, m, s] = record.lateBy.split(":").map(Number);
+              const totalHours = h + m / 60 + s / 3600;
+
+              empData.lateData = { leave: leaveType };
+
+              if (totalHours <= 2) {
                 empData.lateComing += 0.25;
-              } else if (dayMode === "half") {
+                empData.lateData.mode = "Quarter Day";
+              } else if (totalHours <= 4) {
                 empData.lateComing += 0.5;
+                empData.lateData.mode = "Half Day";
+              } else if (totalHours <= 6) {
+                empData.lateComing += 0.75;
+                empData.lateData.mode = "0.75 Day";
               } else {
                 empData.lateComing += 1;
+                empData.lateData.mode = "Full Day";
               }
-            } else {
+            } else if (lateComingType === "fixed") {
               empData.lateComing += 1;
+              empData.totalLateDuration = addTime(
+                empData.totalLateDuration || "00:00:00",
+                record.lateBy
+              );
+              empData.lateData = {
+                mode: "fixed",
+                leave: empData.totalLateDuration,
+              };
             }
           }
 
           if (
-            record.workingHours <
+            record.workHours <
             personalModuleMap[record.employeeId]?.config?.attendancePolicies
               ?.setMinWorkingHours
           ) {
@@ -349,13 +406,19 @@ module.exports = function registerEndpoint(router, { services }) {
             if (exceededCount <= 0) return;
 
             if (workingHoursType === "lop") {
-              empData.workingHoursData = { mode: dayMode };
+              empData.workingHoursData = {
+                mode: dayMode,
+                leave: workingHoursType,
+              };
               if (dayMode === "quarterDay") {
                 empData.workingHours += 0.25;
+                empData.totalPayableDays -= 0.25;
               } else if (dayMode === "halfDay") {
                 empData.workingHours += 0.5;
+                empData.totalPayableDays -= 0.5;
               } else {
                 empData.workingHours += 1;
+                empData.totalPayableDays -= 1;
               }
             } else if (workingHoursType === "leave") {
               empData.workingHoursData = { mode: dayMode, leave: leaveType };
@@ -367,27 +430,60 @@ module.exports = function registerEndpoint(router, { services }) {
                 empData.workingHours += 1;
               }
             } else {
+              empData.workingHoursData = {
+                mode: "fixed",
+                leave: "fixedAMount",
+              };
               empData.workingHours += 1;
             }
           }
 
-          if (record.overTime && record.overTime !== "00:00:00") {
-            switch (record.attendance) {
-              case "present":
+          const fullDayTime = addTime(
+            record.workHours || "00:00:00",
+            record.overTime || "00:00:00"
+          );
+
+          switch (record.attendance) {
+            case "present":
+              if (record.overTime && record.overTime !== "00:00:00") {
                 empData.workingDayOT += 1;
-                break;
-              case "weekOff":
-              case "weekoffPresent":
-                empData.weekOffOT += 1;
-                break;
-              case "holiday":
-              case "holidayPresent":
-                empData.holidayOT += 1;
-                break;
-              case "workFromHome":
-                empData.workFromHomeOT += 1;
-                break;
-            }
+                empData.workingDayOTHours = addTime(
+                  empData.workingDayOTHours || "00:00:00",
+                  fullDayTime
+                );
+              }
+
+              break;
+            case "paidLeave":
+              empData.paidLeave += 1;
+              break;
+            case "unPaidLeave":
+              empData.unpaidLeave += 1;
+              break;
+            case "weekOff":
+            case "weekoffPresent":
+              empData.weekOffOT += 1;
+              empData.weekOffOTHours = addTime(
+                empData.weekOffOTHours || "00:00:00",
+                fullDayTime
+              );
+              break;
+            case "holiday":
+            case "holidayPresent":
+              empData.holidayOT += 1;
+              empData.holidayOTHours = addTime(
+                empData.holidayOTHours || "00:00:00",
+                fullDayTime
+              );
+              break;
+
+            case "workFromHome":
+              empData.workFromHomeOT += 1;
+              empData.workFromHomeOTHours = addTime(
+                empData.workFromHomeOTHours || "00:00:00",
+                fullDayTime
+              );
+              break;
           }
         });
 
@@ -423,4 +519,17 @@ module.exports = function registerEndpoint(router, { services }) {
       });
     }
   });
+};
+const addTime = (time1, time2) => {
+  const [h1, m1, s1] = time1.split(":").map(Number);
+  const [h2, m2, s2] = time2.split(":").map(Number);
+
+  let seconds = s1 + s2;
+  let minutes = m1 + m2 + Math.floor(seconds / 60);
+  let hours = h1 + h2 + Math.floor(minutes / 60);
+
+  return `${String(hours).padStart(2, "0")}:${String(minutes % 60).padStart(
+    2,
+    "0"
+  )}:${String(seconds % 60).padStart(2, "0")}`;
 };
