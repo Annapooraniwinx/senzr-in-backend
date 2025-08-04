@@ -1,17 +1,18 @@
-// // /src/api.js
 // import { jsPDF } from "jspdf";
 // import autoTable from "jspdf-autotable";
 // import nodemailer from "nodemailer";
 // import dayjs from "dayjs";
 
 // export default {
-//   id: "tenant-daily-task-report",
+//   id: "dailytask",
 //   handler: async (_options, { services, logger, getSchema, env }) => {
 //     const { ItemsService } = services;
 //     const schema = await getSchema();
 
 //     const today = dayjs().format("YYYY-MM-DD");
 //     const yesterday = dayjs().subtract(1, "day").format("YYYY-MM-DD");
+//     console.log("📧 Yesterday:", yesterday);
+//     console.log("📧 Today:", today);
 
 //     const tenantService = new ItemsService("tenant", { schema });
 //     const userService = new ItemsService("personalModule", { schema });
@@ -25,7 +26,6 @@
 //       const tenantId = tenant.tenantId;
 //       const tenantName = tenant.tenantName;
 
-//       // Get Admin users from personalModule for this tenant
 //       const adminsRes = await userService.readByQuery({
 //         filter: {
 //           _and: [
@@ -50,28 +50,21 @@
 //         continue;
 //       }
 
-//       // Get task data
 //       const taskRes = await taskService.readByQuery({
 //         filter: {
 //           _and: [
 //             {
-//               assignedUser: {
-//                 tenant: {
-//                   tenantId: { _eq: "017de815-e5b3-4c9d-9c94-6a88dde014d9" },
+//               employeeId: {
+//                 assignedUser: {
+//                   tenant: {
+//                     tenantId: { _eq: tenantId },
+//                   },
 //                 },
 //               },
 //             },
 //             {
-//               _or: [
-//                 {
-//                   dueTime: { _eq: yesterday },
-//                   status: { _in: ["completed", "overdue"] },
-//                 },
-//                 {
-//                   from: { _eq: today },
-//                   status: { _eq: "inprocess" },
-//                 },
-//               ],
+//               from: { _between: [yesterday, today] },
+//               status: { _in: ["completed", "overdue", "inprocess"] },
 //             },
 //           ],
 //         },
@@ -80,7 +73,7 @@
 //           "status",
 //           "dueTime",
 //           "from",
-//           "assignedUser.first_name",
+//           "employeeId.assignedUser.first_name",
 //           "orgId.orgName",
 //           "orgId.orgAddress",
 //           "prodName.productName",
@@ -94,7 +87,6 @@
 //         continue;
 //       }
 
-//       // Generate PDF
 //       const doc = new jsPDF();
 //       doc.text(`Daily Task Report - ${tenantName}`, 10, 10);
 
@@ -106,13 +98,12 @@
 //           t.status,
 //           t.dueTime || "-",
 //           t.from || "-",
-//           t.assignedUser?.first_name || "—",
+//           t.employeeId?.assignedUser?.first_name || "—",
 //         ]),
 //       });
 
 //       const pdfBuffer = doc.output("arraybuffer");
 
-//       // Send email & SMS to each admin user
 //       for (const admin of adminUsers) {
 //         const email = admin.assignedUser?.email;
 //         const phone = admin.assignedUser?.phone;
@@ -123,25 +114,25 @@
 //             subject: `📋 ${tenantName} Task Report - ${today}`,
 //             pdfBuffer,
 //             from: env.EMAIL_USERNAME,
+//             tenantName,
+//             today,
 //           });
-
 //           logger.info(`📧 Email sent to ${email}`);
 //         }
 
 //         if (phone) {
-//           await sendSMS(
-//             phone,
-//             `Sensen Task Report for ${today} is sent to your email.`
-//           );
-//           logger.info(`📱 SMS sent to ${phone}`);
+//           const message = `Sensen Task Report for ${tenantName} dated ${today} is sent to your email.`;
+//           await sendSMS(phone, message);
+//           await sendWhatsApp(phone, tenantName, today);
+//           logger.info(`📱 SMS and 💬 WhatsApp sent to ${phone}`);
 //         }
 //       }
 //     }
 //   },
 // };
 
-// // EMAIL SENDER
-// async function sendEmail({ to, subject, pdfBuffer, from }) {
+// // ========== 📧 EMAIL FUNCTION ==========
+// async function sendEmail({ to, subject, pdfBuffer, from, tenantName, today }) {
 //   const transporter = nodemailer.createTransport({
 //     service: "gmail",
 //     auth: {
@@ -150,26 +141,52 @@
 //     },
 //   });
 
+//   const htmlBody = `
+//     <p>Dear Team,</p>
+//     <p>Please find attached the <strong>Daily Task Report</strong> for <strong>${tenantName}</strong> dated <strong>${today}</strong>.</p>
+//     <p>Summary includes task title, status, timing, and assigned personnel.</p>
+//     <p>For any queries, please contact the operations team.</p>
+//     <br />
+//     <p>Regards,<br/><strong>Sensen Team</strong></p>
+//   `;
+
 //   await transporter.sendMail({
 //     from: `"Sensen Reports" <${from}>`,
 //     to,
 //     subject,
-//     text: "Please find attached your daily task report.",
+//     text: `Daily Task Report for ${tenantName} - ${today} is attached.`,
+//     html: htmlBody,
 //     attachments: [
 //       {
-//         filename: "TaskReport.pdf",
+//         filename: `TaskReport_${tenantName}_${today}.pdf`,
 //         content: Buffer.from(pdfBuffer),
 //       },
 //     ],
 //   });
 // }
 
-// // MOCK SMS FUNCTION
+// // ========== 📱 SMS FUNCTION (MOCK) ==========
 // async function sendSMS(phone, message) {
-//   console.log(`(Mock) Sending SMS to ${phone}: ${message}`);
-//   // You can integrate Twilio, Gupshup, MSG91 here
+//   console.log(`📱 (Mock) Sending SMS to ${phone}: ${message}`);
+//   // TODO: Replace with real provider like MSG91, Twilio, etc.
 // }
 
+// // ========== 💬 WHATSAPP FUNCTION (MOCK) ==========
+// async function sendWhatsApp(phone, tenantName, today) {
+//   const message = `Hello 👋,
+
+// Here is your *Daily Task Report* for *${tenantName}* dated *${today}*.
+
+// 📎 The report has been emailed to you in PDF format.
+
+// Please review it and contact the Sensen Ops team for queries.
+
+// Thanks,
+// Team Sensen`;
+
+//   console.log(`💬 (Mock) Sending WhatsApp to ${phone}: ${message}`);
+//   // TODO: Integrate with Twilio WhatsApp / Gupshup here
+// }
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import nodemailer from "nodemailer";
@@ -177,22 +194,19 @@ import dayjs from "dayjs";
 
 export default {
   id: "dailytask",
-  handler: async (_options, { services, getSchema, env }) => {
+  handler: async (_options, { services, logger, getSchema, env }) => {
     const { ItemsService } = services;
     const schema = await getSchema();
-    console.log("📦 schema:", schema, ItemsService);
 
     const today = dayjs().format("YYYY-MM-DD");
     const yesterday = dayjs().subtract(1, "day").format("YYYY-MM-DD");
-
-    console.log("📅 Today:", today);
-    console.log("📅 Yesterday:", yesterday);
+    console.log("📧 Yesterday:", yesterday);
+    console.log("📧 Today:", today);
 
     const tenantService = new ItemsService("tenant", { schema });
     const userService = new ItemsService("personalModule", { schema });
     const taskService = new ItemsService("tasks", { schema });
 
-    console.log("📦 Fetching tenants...");
     const tenants = await tenantService.readByQuery({
       fields: ["tenantId", "tenantName"],
     });
@@ -201,10 +215,6 @@ export default {
       const tenantId = tenant.tenantId;
       const tenantName = tenant.tenantName;
 
-      console.log(`🏢 Processing Tenant: ${tenantName} (${tenantId})`);
-
-      // Get Admin users from personalModule for this tenant
-      console.log("👥 Fetching Admin users...");
       const adminsRes = await userService.readByQuery({
         filter: {
           _and: [
@@ -223,35 +233,27 @@ export default {
       const adminUsers = adminsRes || [];
 
       if (!adminUsers.length) {
-        console.log(
+        logger.info(
           `🚫 No fieldops Admin users found for tenant: ${tenantName}`
         );
         continue;
-      } else {
-        console.log(`✅ Found ${adminUsers.length} admin user(s)`);
       }
 
-      // Get task data
-      console.log("📋 Fetching tasks...");
       const taskRes = await taskService.readByQuery({
         filter: {
           _and: [
             {
-              tenant: {
-                tenantId: { _eq: "017de815-e5b3-4c9d-9c94-6a88dde014d9" },
+              employeeId: {
+                assignedUser: {
+                  tenant: {
+                    tenantId: { _eq: tenantId },
+                  },
+                },
               },
             },
             {
-              _or: [
-                {
-                  dueTime: { _eq: yesterday },
-                  status: { _in: ["completed", "overdue"] },
-                },
-                {
-                  from: { _eq: today },
-                  status: { _eq: "inprocess" },
-                },
-              ],
+              from: { _between: [yesterday, today] },
+              status: { _in: ["completed", "overdue", "inprocess"] },
             },
           ],
         },
@@ -270,11 +272,10 @@ export default {
       const tasks = taskRes || [];
 
       if (!tasks.length) {
-        console.log(`📭 No tasks to report for tenant: ${tenantName}`);
+        logger.info(`📭 No tasks to report for tenant: ${tenantName}`);
         continue;
       }
 
-      console.log(`📄 Generating PDF for ${tasks.length} task(s)...`);
       const doc = new jsPDF();
       doc.text(`Daily Task Report - ${tenantName}`, 10, 10);
 
@@ -291,41 +292,36 @@ export default {
       });
 
       const pdfBuffer = doc.output("arraybuffer");
-      console.log("✅ PDF generated successfully");
 
-      // Send email & SMS to each admin user
       for (const admin of adminUsers) {
         const email = admin.assignedUser?.email;
         const phone = admin.assignedUser?.phone;
 
         if (email) {
-          console.log(`📧 Sending email to ${email}...`);
           await sendEmail({
             to: email,
             subject: `📋 ${tenantName} Task Report - ${today}`,
             pdfBuffer,
             from: env.EMAIL_USERNAME,
+            tenantName,
+            today,
           });
-          console.log(`✅ Email sent to ${email}`);
+          logger.info(`📧 Email sent to ${email}`);
         }
 
         if (phone) {
-          console.log(`📱 Sending SMS to ${phone}...`);
-          await sendSMS(
-            phone,
-            `Sensen Task Report for ${today} is sent to your email.`
-          );
-          console.log(`✅ SMS sent to ${phone}`);
+          const message = `Sensen Task Report for ${tenantName} dated ${today} is sent to your email.`;
+          await sendSMS(phone, message);
+          await sendWhatsApp(phone, tenantName, today);
+          logger.info(`📱 SMS and 💬 WhatsApp sent to ${phone}`);
         }
       }
     }
-
-    console.log("🏁 Report generation and notifications completed.");
   },
 };
 
-// EMAIL SENDER
-async function sendEmail({ to, subject, pdfBuffer, from }) {
+// ========== 📧 EMAIL FUNCTION ==========
+async function sendEmail({ to, subject, pdfBuffer, from, tenantName, today }) {
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
@@ -334,23 +330,108 @@ async function sendEmail({ to, subject, pdfBuffer, from }) {
     },
   });
 
-  console.log("📨 Sending email with attachment...");
+  const htmlBody = `
+    <p>Dear Team,</p>
+    <p>Please find attached the <strong>Daily Task Report</strong> for <strong>${tenantName}</strong> dated <strong>${today}</strong>.</p>
+    <p>Summary includes task title, status, timing, and assigned personnel.</p>
+    <br />
+    <p>Regards,<br/><strong>Sensen Team</strong></p>
+  `;
+
   await transporter.sendMail({
     from: `"Sensen Reports" <${from}>`,
     to,
     subject,
-    text: "Please find attached your daily task report.",
+    text: `Daily Task Report for ${tenantName} - ${today} is attached.`,
+    html: htmlBody,
     attachments: [
       {
-        filename: "TaskReport.pdf",
+        filename: `TaskReport_${tenantName}_${today}.pdf`,
         content: Buffer.from(pdfBuffer),
       },
     ],
   });
 }
 
-// MOCK SMS FUNCTION
+// ========== 📱 MSG91 SMS FUNCTION ==========
 async function sendSMS(phone, message) {
-  console.log(`📲 (Mock) Sending SMS to ${phone}: ${message}`);
-  // Integrate real SMS provider here (e.g., Twilio, MSG91)
+  const apiKey = "your_msg91_auth_key"; // 🔁 Replace with your real key
+  const sender = "SENSEN"; // 🔁 Replace with your approved DLT sender ID
+  const route = "4";
+  const country = "91";
+
+  const url = `https://api.msg91.com/api/v2/sendsms`;
+
+  const payload = {
+    sender,
+    route,
+    country,
+    sms: [
+      {
+        message,
+        to: [phone],
+      },
+    ],
+  };
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        authkey: apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const result = await res.json();
+    console.log("📱 SMS Response:", result);
+  } catch (err) {
+    console.error("❌ SMS error:", err);
+  }
+}
+
+// ========== 💬 GUPSHUP WHATSAPP FUNCTION ==========
+async function sendWhatsApp(phone, tenantName, today) {
+  const apiKey = "your_gupshup_api_key"; // 🔁 Replace with Gupshup API key
+  const source = "your_registered_whatsapp_number"; // 🔁 Format: 91xxxxxxxxxx
+  const appName = "your_gupshup_app_name"; // 🔁 Gupshup App name
+
+  const message = `Hello 👋,
+
+Here is your *Daily Task Report* for *${tenantName}* dated *${today}*.
+
+📎 The report has been emailed to you in PDF format.
+
+Please review it and contact the Sensen Ops team for queries.
+
+Thanks,
+Team Sensen`;
+
+  const payload = new URLSearchParams({
+    channel: "whatsapp",
+    source,
+    destination: phone,
+    message: JSON.stringify({
+      type: "text",
+      text: message,
+    }),
+    "src.name": appName,
+  });
+
+  try {
+    const res = await fetch(`https://api.gupshup.io/sm/api/v1/msg`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        apikey: apiKey,
+      },
+      body: payload,
+    });
+
+    const result = await res.json();
+    console.log("💬 WhatsApp Response:", result);
+  } catch (err) {
+    console.error("❌ WhatsApp error:", err);
+  }
 }
