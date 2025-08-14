@@ -73,7 +73,7 @@ export default (router, { services, getSchema }) => {
         if (documentType === "aadhaar") {
           try {
             const SUREPASS_API_KEY =
-              "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MzcwMjc3OCwianRpIjoiYmIwZGUwY2MtODdmZC00ZWQzLWE5MDUtMTI1OThiYWI5MjVkIiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTM3MDI3NzgsImV4cCI6MTc1NDk5ODc3OCwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.INN7SRy_BCgjFW-b6NzUyIROuexGciBBlEfO6_AAfEY";
+              "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1NDcxODUyMiwianRpIjoiZWQwY2Y5MGQtMzg1My00ZGRhLTk5YzQtM2IxZDFkZTMyYjM2IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTQ3MTg1MjIsImV4cCI6MTc1NTU4MjUyMiwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.e3Q66ipdsNE0fN_Dfo8K6We-mXeVQ7p9D4gSA6f1TvA";
 
             const digiRes = await axios.post(
               "https://sandbox.surepass.app/api/v1/digilocker/initialize",
@@ -140,7 +140,8 @@ export default (router, { services, getSchema }) => {
         const result = await verifyWithSurepass(
           documentType,
           documentNumber,
-          doc.dob || dobToUse
+          doc.dob || dobToUse,
+          documentType === "bank_account" ? doc.ifsc : undefined
         );
 
         verifiedData[documentType].status = result.success
@@ -191,7 +192,7 @@ export default (router, { services, getSchema }) => {
       }
 
       const SUREPASS_API_KEY =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MzcwMjc3OCwianRpIjoiYmIwZGUwY2MtODdmZC00ZWQzLWE5MDUtMTI1OThiYWI5MjVkIiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTM3MDI3NzgsImV4cCI6MTc1NDk5ODc3OCwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.INN7SRy_BCgjFW-b6NzUyIROuexGciBBlEfO6_AAfEY";
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1NDcxODUyMiwianRpIjoiZWQwY2Y5MGQtMzg1My00ZGRhLTk5YzQtM2IxZDFkZTMyYjM2IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTQ3MTg1MjIsImV4cCI6MTc1NTU4MjUyMiwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.e3Q66ipdsNE0fN_Dfo8K6We-mXeVQ7p9D4gSA6f1TvA";
 
       const response = await axios.get(
         `https://sandbox.surepass.io/api/v1/digilocker/download-aadhaar/${client_id}`,
@@ -336,7 +337,7 @@ export default (router, { services, getSchema }) => {
       }
 
       const SUREPASS_API_KEY =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MzcwMjc3OCwianRpIjoiYmIwZGUwY2MtODdmZC00ZWQzLWE5MDUtMTI1OThiYWI5MjVkIiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTM3MDI3NzgsImV4cCI6MTc1NDk5ODc3OCwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.INN7SRy_BCgjFW-b6NzUyIROuexGciBBlEfO6_AAfEY";
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1NDcxODUyMiwianRpIjoiZWQwY2Y5MGQtMzg1My00ZGRhLTk5YzQtM2IxZDFkZTMyYjM2IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTQ3MTg1MjIsImV4cCI6MTc1NTU4MjUyMiwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.e3Q66ipdsNE0fN_Dfo8K6We-mXeVQ7p9D4gSA6f1TvA";
 
       const response = await axios.get(
         `https://sandbox.surepass.io/api/v1/digilocker/list-documents/${digilocker_client_id}`,
@@ -378,7 +379,7 @@ export default (router, { services, getSchema }) => {
       }
 
       const SUREPASS_API_KEY =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MzcwMjc3OCwianRpIjoiYmIwZGUwY2MtODdmZC00ZWQzLWE5MDUtMTI1OThiYWI5MjVkIiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTM3MDI3NzgsImV4cCI6MTc1NDk5ODc3OCwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.INN7SRy_BCgjFW-b6NzUyIROuexGciBBlEfO6_AAfEY";
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1NDcxODUyMiwianRpIjoiZWQwY2Y5MGQtMzg1My00ZGRhLTk5YzQtM2IxZDFkZTMyYjM2IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTQ3MTg1MjIsImV4cCI6MTc1NTU4MjUyMiwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.e3Q66ipdsNE0fN_Dfo8K6We-mXeVQ7p9D4gSA6f1TvA";
 
       const response = await axios.get(
         `https://sandbox.surepass.io/api/v1/digilocker/download-document/${digilocker_client_id}/${digi_file_id_0}`,
@@ -420,7 +421,7 @@ export default (router, { services, getSchema }) => {
       }
 
       const SUREPASS_API_KEY =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MzcwMjc3OCwianRpIjoiYmIwZGUwY2MtODdmZC00ZWQzLWE5MDUtMTI1OThiYWI5MjVkIiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTM3MDI3NzgsImV4cCI6MTc1NDk5ODc3OCwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.INN7SRy_BCgjFW-b6NzUyIROuexGciBBlEfO6_AAfEY";
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1NDcxODUyMiwianRpIjoiZWQwY2Y5MGQtMzg1My00ZGRhLTk5YzQtM2IxZDFkZTMyYjM2IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTQ3MTg1MjIsImV4cCI6MTc1NTU4MjUyMiwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.e3Q66ipdsNE0fN_Dfo8K6We-mXeVQ7p9D4gSA6f1TvA";
 
       const response = await axios.post(
         "https://sandbox.surepass.io/api/v1/income/employment-history-uan-report",
@@ -446,10 +447,15 @@ export default (router, { services, getSchema }) => {
   });
 
   // ✅ Surepass helper for PAN, DL, UAN, etc.
-  async function verifyWithSurepass(documentType, documentNumber, dob = "") {
+  async function verifyWithSurepass(
+    documentType,
+    documentNumber,
+    dob = "",
+    ifsc
+  ) {
     try {
       const SUREPASS_API_KEY =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MzcwMjc3OCwianRpIjoiYmIwZGUwY2MtODdmZC00ZWQzLWE5MDUtMTI1OThiYWI5MjVkIiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTM3MDI3NzgsImV4cCI6MTc1NDk5ODc3OCwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.INN7SRy_BCgjFW-b6NzUyIROuexGciBBlEfO6_AAfEY";
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1NDcxODUyMiwianRpIjoiZWQwY2Y5MGQtMzg1My00ZGRhLTk5YzQtM2IxZDFkZTMyYjM2IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTQ3MTg1MjIsImV4cCI6MTc1NTU4MjUyMiwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.e3Q66ipdsNE0fN_Dfo8K6We-mXeVQ7p9D4gSA6f1TvA";
 
       let endpoint = "";
       let requestBody = {};
@@ -474,12 +480,15 @@ export default (router, { services, getSchema }) => {
           requestBody = { aadhaar_number: documentNumber };
           break;
         case "bank_account":
-          endpoint =
-            "https://sandbox.surepass.io/api/v1/bank-verification/mobile-to-account";
-          requestBody = { mobile_number: documentNumber };
+          endpoint = "https://sandbox.surepass.io/api/v1/bank-verification";
+          requestBody = {
+            id_number: documentNumber,
+            ifsc: ifsc,
+            ifsc_details: true,
+          };
           break;
         case "esic":
-          endpoint = "https://sandbox.surepass.io/api/v1/esic/esic-v2";
+          endpoint = "https://sandbox.surepass.app/api/v1/esic/esic-v2";
           requestBody = { id_number: documentNumber };
           break;
         default:
