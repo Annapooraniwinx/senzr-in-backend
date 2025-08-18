@@ -73,7 +73,7 @@ export default (router, { services, getSchema }) => {
         if (documentType === "aadhaar") {
           try {
             const SUREPASS_API_KEY =
-              "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MzcwMjc3OCwianRpIjoiYmIwZGUwY2MtODdmZC00ZWQzLWE5MDUtMTI1OThiYWI5MjVkIiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTM3MDI3NzgsImV4cCI6MTc1NDk5ODc3OCwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.INN7SRy_BCgjFW-b6NzUyIROuexGciBBlEfO6_AAfEY";
+              "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1NDcxODUyMiwianRpIjoiZWQwY2Y5MGQtMzg1My00ZGRhLTk5YzQtM2IxZDFkZTMyYjM2IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTQ3MTg1MjIsImV4cCI6MTc1NTU4MjUyMiwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.e3Q66ipdsNE0fN_Dfo8K6We-mXeVQ7p9D4gSA6f1TvA";
 
             const digiRes = await axios.post(
               "https://sandbox.surepass.app/api/v1/digilocker/initialize",
@@ -87,7 +87,7 @@ export default (router, { services, getSchema }) => {
                   skip_main_screen: false,
                   signup_flow: true,
                   // logo_url: "YOUR BRAND LOGO URL",
-                  redirect_url: `https://appv1.samayaccess.com/employee-details/employee/${employeeId}/verificationmodule`,
+                  redirect_url: `https://appv1.samayaccess.com/employee-details/employee/${employeeId}/governmentmodule`,
                 },
               },
               {
@@ -140,7 +140,8 @@ export default (router, { services, getSchema }) => {
         const result = await verifyWithSurepass(
           documentType,
           documentNumber,
-          doc.dob || dobToUse
+          doc.dob || dobToUse,
+          documentType === "bank_account" ? doc.ifsc : undefined
         );
 
         verifiedData[documentType].status = result.success
@@ -191,7 +192,7 @@ export default (router, { services, getSchema }) => {
       }
 
       const SUREPASS_API_KEY =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MzcwMjc3OCwianRpIjoiYmIwZGUwY2MtODdmZC00ZWQzLWE5MDUtMTI1OThiYWI5MjVkIiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTM3MDI3NzgsImV4cCI6MTc1NDk5ODc3OCwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.INN7SRy_BCgjFW-b6NzUyIROuexGciBBlEfO6_AAfEY";
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1NDcxODUyMiwianRpIjoiZWQwY2Y5MGQtMzg1My00ZGRhLTk5YzQtM2IxZDFkZTMyYjM2IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTQ3MTg1MjIsImV4cCI6MTc1NTU4MjUyMiwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.e3Q66ipdsNE0fN_Dfo8K6We-mXeVQ7p9D4gSA6f1TvA";
 
       const response = await axios.get(
         `https://sandbox.surepass.io/api/v1/digilocker/download-aadhaar/${client_id}`,
@@ -323,11 +324,138 @@ export default (router, { services, getSchema }) => {
     }
   });
 
+  // ✅ Get list of DigiLocker documents
+  router.get("/list-documents", async (req, res) => {
+    try {
+      const { digilocker_client_id } = req.query;
+
+      if (!digilocker_client_id) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing digilocker_client_id",
+        });
+      }
+
+      const SUREPASS_API_KEY =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1NDcxODUyMiwianRpIjoiZWQwY2Y5MGQtMzg1My00ZGRhLTk5YzQtM2IxZDFkZTMyYjM2IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTQ3MTg1MjIsImV4cCI6MTc1NTU4MjUyMiwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.e3Q66ipdsNE0fN_Dfo8K6We-mXeVQ7p9D4gSA6f1TvA";
+
+      const response = await axios.get(
+        `https://sandbox.surepass.io/api/v1/digilocker/list-documents/${digilocker_client_id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${SUREPASS_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      return res.json({
+        success: true,
+        documents: response.data,
+      });
+    } catch (err) {
+      console.error(
+        "🔴 Error listing DigiLocker documents:",
+        err.response?.data || err.message
+      );
+      return res.status(500).json({
+        success: false,
+        message: "Failed to list DigiLocker documents",
+        error: err.response?.data || err.message,
+      });
+    }
+  });
+
+  // ✅ Download a specific DigiLocker document
+  router.get("/download-document", async (req, res) => {
+    try {
+      const { digilocker_client_id, digi_file_id_0 } = req.query;
+
+      if (!digilocker_client_id || !digi_file_id_0) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing digilocker_client_id or digi_file_id_0",
+        });
+      }
+
+      const SUREPASS_API_KEY =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1NDcxODUyMiwianRpIjoiZWQwY2Y5MGQtMzg1My00ZGRhLTk5YzQtM2IxZDFkZTMyYjM2IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTQ3MTg1MjIsImV4cCI6MTc1NTU4MjUyMiwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.e3Q66ipdsNE0fN_Dfo8K6We-mXeVQ7p9D4gSA6f1TvA";
+
+      const response = await axios.get(
+        `https://sandbox.surepass.io/api/v1/digilocker/download-document/${digilocker_client_id}/${digi_file_id_0}`,
+        {
+          headers: {
+            Authorization: `Bearer ${SUREPASS_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      return res.json({
+        success: true,
+        document: response.data,
+      });
+    } catch (err) {
+      console.error(
+        "🔴 Error downloading DigiLocker document:",
+        err.response?.data || err.message
+      );
+      return res.status(500).json({
+        success: false,
+        message: "Failed to download DigiLocker document",
+        error: err.response?.data || err.message,
+      });
+    }
+  });
+
+  // ✅ Employment History via UAN
+  router.post("/employment-history", async (req, res) => {
+    try {
+      const { uanNumber } = req.body;
+
+      if (!uanNumber) {
+        return res.status(400).json({
+          success: false,
+          message: "Missing uanNumber in request body",
+        });
+      }
+
+      const SUREPASS_API_KEY =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1NDcxODUyMiwianRpIjoiZWQwY2Y5MGQtMzg1My00ZGRhLTk5YzQtM2IxZDFkZTMyYjM2IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTQ3MTg1MjIsImV4cCI6MTc1NTU4MjUyMiwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.e3Q66ipdsNE0fN_Dfo8K6We-mXeVQ7p9D4gSA6f1TvA";
+
+      const response = await axios.post(
+        "https://sandbox.surepass.io/api/v1/income/employment-history-uan-report",
+        { id_number: uanNumber },
+        {
+          headers: {
+            Authorization: `Bearer ${SUREPASS_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      res.json({ success: true, data: response.data });
+    } catch (error) {
+      console.error(
+        "❌ Error fetching employment history:",
+        error.response?.data || error.message
+      );
+      res
+        .status(500)
+        .json({ success: false, error: error.response?.data || error.message });
+    }
+  });
+
   // ✅ Surepass helper for PAN, DL, UAN, etc.
-  async function verifyWithSurepass(documentType, documentNumber, dob = "") {
+  async function verifyWithSurepass(
+    documentType,
+    documentNumber,
+    dob = "",
+    ifsc
+  ) {
     try {
       const SUREPASS_API_KEY =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MzcwMjc3OCwianRpIjoiYmIwZGUwY2MtODdmZC00ZWQzLWE5MDUtMTI1OThiYWI5MjVkIiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTM3MDI3NzgsImV4cCI6MTc1NDk5ODc3OCwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.INN7SRy_BCgjFW-b6NzUyIROuexGciBBlEfO6_AAfEY";
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1NDcxODUyMiwianRpIjoiZWQwY2Y5MGQtMzg1My00ZGRhLTk5YzQtM2IxZDFkZTMyYjM2IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTQ3MTg1MjIsImV4cCI6MTc1NTU4MjUyMiwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.e3Q66ipdsNE0fN_Dfo8K6We-mXeVQ7p9D4gSA6f1TvA";
 
       let endpoint = "";
       let requestBody = {};
@@ -352,12 +480,15 @@ export default (router, { services, getSchema }) => {
           requestBody = { aadhaar_number: documentNumber };
           break;
         case "bank_account":
-          endpoint =
-            "https://sandbox.surepass.io/api/v1/bank-verification/mobile-to-account";
-          requestBody = { mobile_number: documentNumber };
+          endpoint = "https://sandbox.surepass.io/api/v1/bank-verification";
+          requestBody = {
+            id_number: documentNumber,
+            ifsc: ifsc,
+            ifsc_details: true,
+          };
           break;
         case "esic":
-          endpoint = "https://sandbox.surepass.io/api/v1/esic/esic-v2";
+          endpoint = "https://sandbox.surepass.app/api/v1/esic/esic-v2";
           requestBody = { id_number: documentNumber };
           break;
         default:
