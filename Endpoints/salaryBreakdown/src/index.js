@@ -2,6 +2,10 @@ module.exports = function registerEndpoint(router, { services }) {
   router.get("/", async (req, res) => {
     try {
       const employeeIdsParam = req.query.filter?.employee?._in;
+      const monthYearParam = req.query.month?.replace(
+        /(\d{4})-(\d{2})/,
+        "$2/$1"
+      );
 
       if (!employeeIdsParam) {
         return res.status(400).json({
@@ -18,7 +22,8 @@ module.exports = function registerEndpoint(router, { services }) {
         employeeIds,
         services,
         req.schema,
-        req.accountability
+        req.accountability,
+        monthYearParam
       );
       const personalModuleData = await getPersonalModuleData(
         employeeIds,
@@ -44,7 +49,14 @@ module.exports = function registerEndpoint(router, { services }) {
           employeeData,
           salaryData
         );
-        return calculatedBreakdown ? { ...calculatedBreakdown } : null;
+
+        if (!calculatedBreakdown) {
+          throw new Error(
+            `Failed to calculate salary breakdown for employee ID: ${salaryData.employee.id}`
+          );
+        }
+
+        return calculatedBreakdown;
       });
 
       return res.json({
@@ -64,31 +76,59 @@ async function getSalaryBreakdownData(
   employeeIds,
   services,
   schema,
-  accountability
+  accountability,
+  monthYearParam
 ) {
   const { ItemsService } = services;
-
-  const salaryBreakdownService = new ItemsService("SalaryBreakdown", {
+  const salaryService = new ItemsService("SalaryBreakdown", {
     schema,
     accountability,
   });
 
-  const data = await salaryBreakdownService.readByQuery({
-    filter: {
-      employee: { _in: employeeIds },
-    },
+  const data = await salaryService.readByQuery({
+    filter: { employee: { _in: employeeIds } },
     fields: [
       "ctc",
       "employee.id",
       "id",
       "voluntaryPF",
       "employersContribution",
+      "salaryTracking",
     ],
     limit: -1,
   });
 
-  return data;
+  const [targetMonth, targetYear] =
+    monthYearParam?.split("/").map(Number) || [];
+
+  return data.map((item) => {
+    const entries = item.salaryTracking
+      ? Object.entries(item.salaryTracking)
+          .map(([monthYear, ctc]) => {
+            const [month, year] = monthYear.split("/").map(Number);
+            return { month, year, ctc };
+          })
+          .sort((a, b) => a.year - b.year || a.month - b.month)
+      : [];
+
+    const applicableEntry =
+      entries.find((e) => e.year === targetYear && e.month === targetMonth) ||
+      entries
+        .filter(
+          (e) =>
+            e.year < targetYear ||
+            (e.year === targetYear && e.month < targetMonth)
+        )
+        .pop();
+
+    return {
+      ...item,
+      ctc: applicableEntry?.ctc || item.ctc,
+      originalCtc: item.ctc,
+    };
+  });
 }
+
 const getPersonalModuleData = async (
   employeeIds,
   services,
@@ -150,7 +190,15 @@ const calculateMonthlySalaryBreakdown = (employeeData, salaryBreakdownData) => {
     Number(annualCTC) === 0 ||
     !salaryConfig
   ) {
-    return;
+    throw new Error(
+      !annualCTC
+        ? "Annual CTC is missing"
+        : isNaN(annualCTC)
+        ? "Annual CTC is not a valid number"
+        : Number(annualCTC) === 0
+        ? "Annual CTC cannot be zero"
+        : "Salary configuration is missing"
+    );
   }
 
   // Constants for calculations
@@ -432,7 +480,9 @@ const calculateMonthlySalaryBreakdown = (employeeData, salaryBreakdownData) => {
   const updatedEmployerContributions = Object.entries(
     employerContributions
   ).map(([key, item]) => {
-    const includedInCTC = salaryBreakdownData?.employersContribution?.[key]?.includedInCTC ?? item?.withinCTC;
+    const includedInCTC =
+      salaryBreakdownData?.employersContribution?.[key]?.includedInCTC ??
+      item?.withinCTC;
 
     const calculations = item.calculations || item.Calculations || [];
 
@@ -521,10 +571,8 @@ const calculateMonthlySalaryBreakdown = (employeeData, salaryBreakdownData) => {
   });
   const voluntary = salaryBreakdownData.voluntaryPF;
 
-  // Add this variable declaration after line 28 (after adminAmount calculation):
   let voluntaryPFAmount = 0;
 
-  // Add this logic after the adminAmount calculation (around line 280-290):
   if (voluntary) {
     if (employeeData.assignedUser?.PFAccountNumber) {
       const vp = voluntary.VoluntaryPF;
@@ -590,6 +638,7 @@ const calculateMonthlySalaryBreakdown = (employeeData, salaryBreakdownData) => {
 
   return {
     id: salaryBreakdownData.id,
+    annualCTC: Math.round(annualCTC),
     monthlyCTC: Math.round(monthlyCTC),
     basicPayValue: Math.round(basicPayValue),
     totalEarnings: Math.round(totalEarnings),

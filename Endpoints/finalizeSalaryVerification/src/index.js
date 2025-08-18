@@ -141,6 +141,13 @@ var src = function registerEndpoint(router, { services }) {
       console.log(`Found ${personalModuleData.length} personal module records`);
 
       const personalIds = personalModuleData.map((item) => item.id);
+      if (!personalModuleData.length) {
+        console.log("No personal module records found");
+        return res.status(404).json({
+          error: "No employee records found",
+          details: "Could not find any employees matching the provided IDs",
+        });
+      }
 
       console.log(
         "Fetching salary breakdown data for personal IDs:",
@@ -179,9 +186,13 @@ var src = function registerEndpoint(router, { services }) {
         limit: -1,
       });
 
-      console.log(
-        `Found ${salaryBreakdownData.length} salary breakdown records`
-      );
+      if (!salaryBreakdownData.length) {
+        return res.status(404).json({
+          error: "Salary configuration missing",
+          details:
+            "No salary breakdown records found for the provided employees",
+        });
+      }
 
       console.log("Fetching payroll verification data...");
       const payrollVerificationService = new ItemsService(
@@ -396,7 +407,7 @@ var src = function registerEndpoint(router, { services }) {
         const employerPFIncludedInCTC =
           salaryInfo?.employersContribution?.EmployerPF?.includedInCTC ??
           employerContributionsConfig["EmployerPF"]?.withinCTC;
-          let adminChargeWithoutCtc = { name: "adminCharge", rupee: 0 };
+        let adminChargeWithoutCtc = { name: "adminCharge", rupee: 0 };
         if (personal.assignedUser.PFAccountNumber) {
           if (adminConfig?.enable) {
             const calculated =
@@ -415,7 +426,6 @@ var src = function registerEndpoint(router, { services }) {
             );
           }
         }
-        
 
         const deductionDates = stateTax?.LWF?.Deduction || [];
         const lwfApplicable = deductionDates.some((date) => {
@@ -717,7 +727,7 @@ var src = function registerEndpoint(router, { services }) {
           employerContributions,
           employeeDeductions,
           employerContributionsFull,
-          admin:adminChargeWithoutCtc,
+          admin: adminChargeWithoutCtc,
           employerLwf,
           employeeLwf,
           pt,
@@ -745,8 +755,7 @@ var src = function registerEndpoint(router, { services }) {
           totalBenefits,
           perHourSalary,
           perDaySalary,
-           perDaySalary,
-          
+          perDaySalary,
         };
       });
 
