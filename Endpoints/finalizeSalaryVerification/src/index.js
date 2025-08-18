@@ -181,6 +181,7 @@ var src = function registerEndpoint(router, { services }) {
           "anualEarnings",
           "annualDeduction",
           "benefitsManual",
+          "advance",
           "id",
         ],
         limit: -1,
@@ -503,7 +504,12 @@ var src = function registerEndpoint(router, { services }) {
         } else if (voluntary?.VoluntaryPF?.type === "fixed") {
           voluntaryPFAmount = voluntary.VoluntaryPF.amount || 0;
         }
-
+       const advanceData =
+       salaryInfo.advance && Array.isArray(salaryInfo.advance)
+       ? salaryInfo.advance
+        .filter((item) => shouldIncludeManualBenefit(item))
+        .reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
+       : 0;
         const bonusManual =
           salaryInfo.benefitsManual?.bonusManual &&
           Array.isArray(salaryInfo.benefitsManual.bonusManual)
@@ -734,7 +740,7 @@ var src = function registerEndpoint(router, { services }) {
           otherDeductions,
           salaryArrears: pendingEarnings,
           adminCharge: adminChargeContribution,
-
+          advance: advanceData, 
           voluntaryPFAmount,
           bonusManual,
           incentiveManual,
