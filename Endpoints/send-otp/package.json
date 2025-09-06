@@ -1,27 +1,21 @@
 {
-	"name": "task-remainder",
+	"name": "send-otp",
 	"description": "Please enter a description for your extension",
 	"icon": "extension",
 	"version": "1.0.0",
 	"keywords": [
 		"directus",
 		"directus-extension",
-		"directus-extension-operation"
+		"directus-extension-endpoint"
 	],
 	"type": "module",
 	"files": [
 		"dist"
 	],
 	"directus:extension": {
-		"type": "operation",
-		"path": {
-			"app": "dist/app.js",
-			"api": "dist/api.js"
-		},
-		"source": {
-			"app": "src/app.js",
-			"api": "src/api.js"
-		},
+		"type": "endpoint",
+		"path": "dist/index.js",
+		"source": "src/index.js",
 		"host": "^10.10.0"
 	},
 	"scripts": {
@@ -31,14 +25,9 @@
 		"validate": "directus-extension validate"
 	},
 	"devDependencies": {
-		"@directus/extensions-sdk": "14.0.0",
-		"vue": "^3.5.17"
+		"@directus/extensions-sdk": "16.0.1"
 	},
 	"dependencies": {
-		"dayjs": "^1.11.13",
-		"jspdf-autotable": "^5.0.2",
-		"node-fetch": "^3.3.2",
-		"nodemailer": "^7.0.5",
-		"twilio": "^5.8.0"
+		"nodemailer": "^7.0.5"
 	}
 }

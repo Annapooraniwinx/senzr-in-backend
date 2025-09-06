@@ -191,6 +191,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import nodemailer from "nodemailer";
 import dayjs from "dayjs";
+import fetch from "node-fetch";
 
 export default {
   id: "dailytask",
@@ -200,8 +201,6 @@ export default {
 
     const today = dayjs().format("YYYY-MM-DD");
     const yesterday = dayjs().subtract(1, "day").format("YYYY-MM-DD");
-    console.log("📧 Yesterday:", yesterday);
-    console.log("📧 Today:", today);
 
     const tenantService = new ItemsService("tenant", { schema });
     const userService = new ItemsService("personalModule", { schema });
@@ -276,6 +275,7 @@ export default {
         continue;
       }
 
+      // === Generate PDF for email only ===
       const doc = new jsPDF();
       doc.text(`Daily Task Report - ${tenantName}`, 10, 10);
 
@@ -293,6 +293,7 @@ export default {
 
       const pdfBuffer = doc.output("arraybuffer");
 
+      // === Send to all Admin users ===
       for (const admin of adminUsers) {
         const email = admin.assignedUser?.email;
         const phone = admin.assignedUser?.phone;
@@ -310,9 +311,9 @@ export default {
         }
 
         if (phone) {
-          const message = `Sensen Task Report for ${tenantName} dated ${today} is sent to your email.`;
-          await sendSMS(phone, message);
-          await sendWhatsApp(phone, tenantName, today);
+          const msg = `Sensen Task Report for ${tenantName} dated ${today} has been sent to your registered email.`;
+          await sendSMS(phone, msg);
+          await sendWhatsAppTemplate(phone, tenantName, today, msg);
           logger.info(`📱 SMS and 💬 WhatsApp sent to ${phone}`);
         }
       }
@@ -333,7 +334,7 @@ async function sendEmail({ to, subject, pdfBuffer, from, tenantName, today }) {
   const htmlBody = `
     <p>Dear Team,</p>
     <p>Please find attached the <strong>Daily Task Report</strong> for <strong>${tenantName}</strong> dated <strong>${today}</strong>.</p>
-    <p>Summary includes task title, status, timing, and assigned personnel.</p>
+    <p>This report includes completed, pending, and in-process tasks, along with timing and assigned personnel.</p>
     <br />
     <p>Regards,<br/><strong>Sensen Team</strong></p>
   `;
@@ -353,33 +354,32 @@ async function sendEmail({ to, subject, pdfBuffer, from, tenantName, today }) {
   });
 }
 
-// ========== 📱 MSG91 SMS FUNCTION ==========
-async function sendSMS(phone, message) {
-  const apiKey = "your_msg91_auth_key"; // 🔁 Replace with your real key
-  const sender = "SENSEN"; // 🔁 Replace with your approved DLT sender ID
-  const route = "4";
-  const country = "91";
-
-  const url = `https://api.msg91.com/api/v2/sendsms`;
+// ========== 📱 MSG91 SMS FUNCTION (FLOW API) ==========
+async function sendSMS(phone, tenantName, today, taskCount) {
+  const apiKey = "464131A0Rz2wIpy689a1409P1";
+  const templateId = "689dc00be8b00007ec767993";
 
   const payload = {
-    sender,
-    route,
-    country,
-    sms: [
+    template_id: templateId,
+    short_url: "0",
+    realTimeResponse: "1",
+    recipients: [
       {
-        message,
-        to: [phone],
+        mobiles: `91${phone}`,
+        VAR1: tenantName,
+        VAR2: today,
+        VAR3: taskCount,
       },
     ],
   };
 
   try {
-    const res = await fetch(url, {
+    const res = await fetch(`https://control.msg91.com/api/v5/flow`, {
       method: "POST",
       headers: {
+        accept: "application/json",
         authkey: apiKey,
-        "Content-Type": "application/json",
+        "content-type": "application/json",
       },
       body: JSON.stringify(payload),
     });
@@ -391,47 +391,39 @@ async function sendSMS(phone, message) {
   }
 }
 
-// ========== 💬 GUPSHUP WHATSAPP FUNCTION ==========
-async function sendWhatsApp(phone, tenantName, today) {
-  const apiKey = "your_gupshup_api_key"; // 🔁 Replace with Gupshup API key
-  const source = "your_registered_whatsapp_number"; // 🔁 Format: 91xxxxxxxxxx
-  const appName = "your_gupshup_app_name"; // 🔁 Gupshup App name
+// ========== 💬 MSG91 WHATSAPP TEMPLATE FUNCTION ==========
+async function sendWhatsAppTemplate(phone, tenantName, today, message) {
+  const apiKey = "464131A0Rz2wIpy689a1409P1";
+  const integratedNumber = "+919344297569";
+  const templateName = `${tenantName} daily_task_report`;
+  const language = "en";
 
-  const message = `Hello 👋,
-
-Here is your *Daily Task Report* for *${tenantName}* dated *${today}*.
-
-📎 The report has been emailed to you in PDF format.
-
-Please review it and contact the Sensen Ops team for queries.
-
-Thanks,
-Team Sensen`;
-
-  const payload = new URLSearchParams({
-    channel: "whatsapp",
-    source,
-    destination: phone,
-    message: JSON.stringify({
-      type: "text",
-      text: message,
-    }),
-    "src.name": appName,
-  });
+  const payload = {
+    integrated_number: integratedNumber,
+    recipient_number: `+91${phone}`,
+    type: "template",
+    template_name: templateName,
+    language,
+    variables: ["Team", today, message],
+  };
 
   try {
-    const res = await fetch(`https://api.gupshup.io/sm/api/v1/msg`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        apikey: apiKey,
-      },
-      body: payload,
-    });
+    const res = await fetch(
+      "https://control.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/",
+      {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          authkey: apiKey,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      }
+    );
 
     const result = await res.json();
-    console.log("💬 WhatsApp Response:", result);
+    console.log("💬 WhatsApp Template Response:", result);
   } catch (err) {
-    console.error("❌ WhatsApp error:", err);
+    console.error("❌ WhatsApp Template Error:", err);
   }
 }

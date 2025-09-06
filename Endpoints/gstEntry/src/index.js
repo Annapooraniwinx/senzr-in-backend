@@ -13,9 +13,9 @@ export default function registerEndpoint(router) {
       });
     }
 
-    const SUREPASS_URL = "https://sandbox.surepass.io/api/v1/corporate/gstin";
+    const SUREPASS_URL = "https://kyc-api.surepass.app/api/v1/corporate/gstin";
     const BEARER_TOKEN =
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1NDcxODUyMiwianRpIjoiZWQwY2Y5MGQtMzg1My00ZGRhLTk5YzQtM2IxZDFkZTMyYjM2IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTQ3MTg1MjIsImV4cCI6MTc1NTU4MjUyMiwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.e3Q66ipdsNE0fN_Dfo8K6We-mXeVQ7p9D4gSA6f1TvA";
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1NTMyMzYxNCwianRpIjoiMTQxZDgzZTktYWZiZS00ZjlhLTkyNGEtZjc4MzdhMTJjYjQzIiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5IjoiZGV2LmVzc2xAc3VyZXBhc3MuaW8iLCJuYmYiOjE3NTUzMjM2MTQsImV4cCI6MjM4NjA0MzYxNCwiZW1haWwiOiJlc3NsQHN1cmVwYXNzLmlvIiwidGVuYW50X2lkIjoibWFpbiIsInVzZXJfY2xhaW1zIjp7InNjb3BlcyI6WyJ1c2VyIl19fQ.kJXugMT6WOZ9s4W_lt8QUFXc7RYzqjbRmraHuipu978";
 
     try {
       const response = await axios.post(
