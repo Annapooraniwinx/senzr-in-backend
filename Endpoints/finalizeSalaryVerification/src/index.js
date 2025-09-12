@@ -116,12 +116,12 @@ var src = function registerEndpoint(router, { services }) {
           "config.attendancePolicies.workinghrsDaysLimit",
           "config.attendancePolicies.wrkHoursDayMode",
           "config.attendancePolicies.earlyExitPenaltyAmt",
-          "config.attendancePolicies.extraHoursPay ",
+          "config.attendancePolicies.extraHoursPay",
           "config.attendancePolicies.weekOffPay",
           "config.attendancePolicies.publicHolidayPay",
           "config.attendancePolicies.weekOffType",
           "config.attendancePolicies.publicHolidayType",
-          "config.aattendancePolicies.extraHoursType",
+          "config.attendancePolicies.extraHoursType",
           "config.attendanceSettings",
           "assignedUser.pfTracking",
           "assignedUser.esiTracking",
@@ -624,7 +624,7 @@ var src = function registerEndpoint(router, { services }) {
             case "Custom Multiplier":
               weekOffOTPay =
                 weekOffOT *
-                (Number(attendancePolicy?.weekOffPay || 1) * perHourSalary);
+                (Number(attendancePolicy?.weekOffPay || 0) * perHourSalary);
               break;
             case "Fixed Hourly Rate":
               weekOffOTPay =
@@ -636,11 +636,11 @@ var src = function registerEndpoint(router, { services }) {
         }
         let workingHoursOTPay = 0;
         if (workingHoursOT) {
-          switch (attendancePolicy?.workingHoursType) {
+          switch (attendancePolicy?.extraHoursType) {
             case "Custom Multiplier":
               workingHoursOTPay =
                 workingHoursOT *
-                (Number(attendancePolicy?.workingHoursPay || 1) *
+                (Number(attendancePolicy?.extraHoursPay || 0) *
                   perHourSalary);
               break;
             case "Fixed Hourly Rate":
@@ -657,11 +657,11 @@ var src = function registerEndpoint(router, { services }) {
             case "Custom Multiplier":
               holidayOTPay =
                 holidayOT *
-                (Number(attendancePolicy?.holidayPay || 1) * perHourSalary);
+                (Number(attendancePolicy?.publicHolidayPay || 0) * perHourSalary);
               break;
             case "Fixed Hourly Rate":
               holidayOTPay =
-                holidayOT * Number(attendancePolicy?.holidayPay || 0);
+                holidayOT * Number(attendancePolicy?.publicHolidayPay|| 0);
               break;
             default:
               holidayOTPay = 0;
