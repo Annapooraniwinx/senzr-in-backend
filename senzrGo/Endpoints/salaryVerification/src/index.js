@@ -62,39 +62,39 @@ var src = function registerEndpoint(router, { services }) {
           "assignedUser.gender",
           "assignedUser.PFAccountNumber",
           "assignedUser.ESIAccountNumber",
-          "salaryConfig.basicPay",
-          "salaryConfig.stateTaxes.state",
-          "salaryConfig.bonusConfig",
-          "salaryConfig.id",
-          "salaryConfig.earnings",
-          "salaryConfig.deductions",
-          "salaryConfig.employerContribution",
-          "salaryConfig.advancedMode",
-          "salaryConfig.allowances",
-          "salaryConfig.deduction",
-          "salaryConfig.professionalTax.highlySkilled",
-          "salaryConfig.professionalTax.skilled",
-          "salaryConfig.professionalTax.stateTaxRules",
-          "salaryConfig.professionalTax.state",
-          "salaryConfig.professionalTax.id",
-          "salaryConfig.LWF.state",
-          "salaryConfig.LWF.stateTaxRules",
-          "salaryConfig.LWF.skilled",
-          "salaryConfig.LWF.highlySkilled",
-          "salaryConfig.LWF.id",
-          "salaryConfig.employersContributions",
-          "salaryConfig.employeeDeductions",
-          "salaryConfig.configName",
-          "salaryConfig.adminCharges",
-          "salaryConfig.stateTaxes.stateTaxRules",
-          "salaryConfig.stateTaxes.id",
-          "salaryConfig.stateTaxes.skilled",
-          "salaryConfig.stateTaxes.highlySkilled",
-          "salaryConfig.zone",
-          "salaryConfig.skillLevel",
-          "salaryConfig.retentionPayConfig",
-          "salaryConfig.incentiveConfig",
-          "salaryConfig.shopEstablishment",
+          // "salaryConfig.basicPay",
+          // "salaryConfig.stateTaxes.state",
+          // "salaryConfig.bonusConfig",
+          // "salaryConfig.id",
+          // "salaryConfig.earnings",
+          // "salaryConfig.deductions",
+          // "salaryConfig.employerContribution",
+          // "salaryConfig.advancedMode",
+          // "salaryConfig.allowances",
+          // "salaryConfig.deduction",
+          // "salaryConfig.professionalTax.highlySkilled",
+          // "salaryConfig.professionalTax.skilled",
+          // "salaryConfig.professionalTax.stateTaxRules",
+          // "salaryConfig.professionalTax.state",
+          // "salaryConfig.professionalTax.id",
+          // "salaryConfig.LWF.state",
+          // "salaryConfig.LWF.stateTaxRules",
+          // "salaryConfig.LWF.skilled",
+          // "salaryConfig.LWF.highlySkilled",
+          // "salaryConfig.LWF.id",
+          // "salaryConfig.employersContributions",
+          // "salaryConfig.employeeDeductions",
+          // "salaryConfig.configName",
+          // "salaryConfig.adminCharges",
+          // "salaryConfig.stateTaxes.stateTaxRules",
+          // "salaryConfig.stateTaxes.id",
+          // "salaryConfig.stateTaxes.skilled",
+          // "salaryConfig.stateTaxes.highlySkilled",
+          // "salaryConfig.zone",
+          // "salaryConfig.skillLevel",
+          // "salaryConfig.retentionPayConfig",
+          // "salaryConfig.incentiveConfig",
+          // "salaryConfig.shopEstablishment",
           "config.attendancePolicies",
           "config.attendancePolicies.LateCommingDayMode",
           "config.attendancePolicies.earlyExitAllowed",
@@ -121,14 +121,98 @@ var src = function registerEndpoint(router, { services }) {
           "config.attendancePolicies.publicHolidayPay",
           "config.attendancePolicies.weekOffType",
           "config.attendancePolicies.publicHolidayType",
-          "config.aattendancePolicies.extraHoursType",
+          "config.attendancePolicies.extraHoursType",
           "config.attendanceSettings",
           "assignedUser.pfTracking",
           "assignedUser.esiTracking",
+          "salaryConfigTracking",
         ],
         sort: ["-date_updated"],
         limit: -1,
       });
+      const trackingIds = personalModuleData.flatMap((item) =>
+        Object.values(item.salaryConfigTracking || {}).flatMap((year) =>
+          Object.values(year)
+        )
+      );
+
+      const allConfigIds = personalModuleData.flatMap((item) => {
+        const targetYear = new Date(endDate).getFullYear();
+        const targetMonth = new Date(endDate).getMonth() + 1; // Months are 1-indexed in tracking
+
+        const tracking = item.salaryConfigTracking || {};
+        const id =
+          tracking[targetYear]?.[String(targetMonth).padStart(2, "0")] ||
+          Object.entries(tracking[targetYear] || {})
+            .filter(([m]) => Number(m) < targetMonth)
+            .pop()?.[1] ||
+          null;
+
+        return id ? [id] : [];
+      });
+
+      const allConfigIdsToFetch = [
+        ...new Set([...allConfigIds, ...trackingIds]),
+      ];
+
+      const salarySettingService = new ItemsService("salarySetting", {
+        schema: req.schema,
+        accountability: req.accountability,
+      });
+
+      const salarySettings = allConfigIdsToFetch.length
+        ? await salarySettingService.readByQuery({
+            filter: { id: { _in: allConfigIdsToFetch } },
+            fields: [
+              "basicPay",
+              "earnings",
+              "deductions",
+              "employerContribution",
+              "allowances",
+              "deduction",
+              "professionalTax",
+              "LWF",
+              "LWF.state",
+              "LWF.stateTaxRules",
+              "professionalTax.state",
+              "professionalTax.stateTaxRules",
+              "employersContributions",
+              "employeeDeductions",
+              "adminCharges",
+              "stateTaxes",
+              "id",
+            ],
+            limit: -1,
+          })
+        : [];
+
+      if (salarySettings.length) {
+        personalModuleData.forEach((item) => {
+          const targetYear = new Date(endDate).getFullYear();
+          const targetMonth = new Date(endDate).getMonth() + 1;
+
+          const tracking = item.salaryConfigTracking || {};
+          const directMatch =
+            tracking[targetYear]?.[String(targetMonth).padStart(2, "0")] ||
+            null;
+
+          const previousMatch =
+            Object.entries(tracking[targetYear] || {})
+              .map(([m, v]) => [Number(m), v])
+              .filter(([m]) => m < targetMonth)
+              .sort((a, b) => a[0] - b[0])
+              .pop()?.[1] || null;
+
+          const id = directMatch || previousMatch || null;
+
+          if (id) {
+            item.salaryConfig =
+              salarySettings.find((cfg) => cfg.id == id) || null;
+          } else {
+            item.salaryConfig = null;
+          }
+        });
+      }
 
       const personalIds = personalModuleData.map((item) => item.id);
       if (!personalModuleData.length) {
@@ -166,7 +250,6 @@ var src = function registerEndpoint(router, { services }) {
           "anualEarnings",
           "annualDeduction",
           "benefitsManual",
-          "advance",
           "id",
         ],
         limit: -1,
@@ -265,9 +348,9 @@ var src = function registerEndpoint(router, { services }) {
               config.selectedOption === null ||
               !includedInCTC ||
               (type === "EmployerPF" &&
-                !personal.assignedUser.PFAccountNumber ) ||
+                !personal.assignedUser.PFAccountNumber) ||
               (type === "EmployerESI" &&
-                !personal.assignedUser.ESIAccountNumber )
+                !personal.assignedUser.ESIAccountNumber)
             ) {
               return {
                 name: type,
@@ -314,10 +397,8 @@ var src = function registerEndpoint(router, { services }) {
           if (
             !config ||
             config.selectedOption === null ||
-            (type === "EmployeePF" &&
-              !personal.assignedUser.PFAccountNumber ) ||
-            (type === "EmployeeESI" &&
-              !personal.assignedUser.ESIAccountNumber)
+            (type === "EmployeePF" && !personal.assignedUser.PFAccountNumber) ||
+            (type === "EmployeeESI" && !personal.assignedUser.ESIAccountNumber)
           ) {
             return {
               name: type,
@@ -359,9 +440,9 @@ var src = function registerEndpoint(router, { services }) {
               !config ||
               config.selectedOption === null ||
               (type === "EmployerPF" &&
-                !personal.assignedUser.PFAccountNumber ) ||
+                !personal.assignedUser.PFAccountNumber) ||
               (type === "EmployerESI" &&
-                !personal.assignedUser.ESIAccountNumber )
+                !personal.assignedUser.ESIAccountNumber)
             ) {
               return {
                 name: type,
@@ -417,10 +498,7 @@ var src = function registerEndpoint(router, { services }) {
         }
 
         let adminChargeContribution = { name: "AdminCharge", rupee: 0 };
-        if (
-          employerPFIncludedInCTC &&
-          personal.assignedUser.PFAccountNumber 
-        ) {
+        if (employerPFIncludedInCTC && personal.assignedUser.PFAccountNumber) {
           if (adminConfig?.enable) {
             const calculated =
               (Number(adminConfig.charge) / 100) * employerPFContribution;
@@ -506,12 +584,7 @@ var src = function registerEndpoint(router, { services }) {
         } else if (voluntary?.VoluntaryPF?.type === "fixed") {
           voluntaryPFAmount = voluntary.VoluntaryPF.amount || 0;
         }
-       const advanceData =
-       salaryInfo.advance && Array.isArray(salaryInfo.advance)
-       ? salaryInfo.advance
-        .filter((item) => shouldIncludeManualBenefit(item))
-        .reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
-       : 0;
+
         const bonusManual =
           salaryInfo.benefitsManual?.bonusManual &&
           Array.isArray(salaryInfo.benefitsManual.bonusManual)
@@ -731,7 +804,7 @@ var src = function registerEndpoint(router, { services }) {
           // ...personal,
           // data: payrollVerificationData,
           // salaryBreakdown: salaryInfo || null,
-          
+
           employeePf: salaryInfo.employeeDeduction?.EmployeePF || 0,
           monthlyCtc: salaryInfo.basicSalary,
           payrollId: payrollData?.id || null,
@@ -749,7 +822,7 @@ var src = function registerEndpoint(router, { services }) {
           otherDeductions,
           salaryArrears: pendingEarnings,
           adminCharge: adminChargeContribution,
-          advance: advanceData, 
+
           voluntaryPFAmount,
           bonusManual,
           incentiveManual,
