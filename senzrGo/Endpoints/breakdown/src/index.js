@@ -29,7 +29,8 @@ module.exports = function registerEndpoint(router, { services }) {
         employeeIds,
         services,
         req.schema,
-        req.accountability
+        req.accountability,
+        date
       );
 
       const calculatedData = salaryBreakdownData.map((salaryData) => {
@@ -59,6 +60,7 @@ module.exports = function registerEndpoint(router, { services }) {
       });
 
       return res.json({
+        personalModuleData,
         data: calculatedData,
       });
     } catch (error) {
@@ -122,7 +124,7 @@ async function getSalaryBreakdownData(
 
     return {
       ...item,
-      ctc: applicableEntry?.ctc || item.ctc,
+      monthlyCtc: applicableEntry?.ctc || item.ctc,
       originalCtc: item.ctc,
     };
   });
@@ -132,7 +134,8 @@ const getPersonalModuleData = async (
   employeeIds,
   services,
   schema,
-  accountability
+  accountability,
+  date
 ) => {
   const { ItemsService } = services;
 
@@ -146,38 +149,119 @@ const getPersonalModuleData = async (
       id: { _in: employeeIds },
     },
     fields: [
-      "salaryConfig.basicPay",
-      "salaryConfig.earnings",
-      "salaryConfig.deductions",
-      "salaryConfig.employerContribution",
-      "salaryConfig.allowances",
-      "salaryConfig.deduction",
-      "salaryConfig.professionalTax",
-      "salaryConfig.LWF",
-      "salaryConfig.LWF.state",
-      "salaryConfig.LWF.stateTaxRules",
-      "salaryConfig.professionalTax.state",
-      "salaryConfig.professionalTax.stateTaxRules",
-      "salaryConfig.employersContributions",
-      "salaryConfig.employeeDeductions",
-      "salaryConfig.adminCharges",
-      "salaryConfig.stateTaxes",
-      "salaryConfig.id",
-      "salaryConfig.professionalTax.id",
-      "salaryConfig.professionalTax.state",
-      "salaryConfig.professionalTax.stateTaxRules",
-      "salaryConfig.LWF.id",
-      "salaryConfig.LWF.state",
-      "salaryConfig.LWF.stateTaxRules",
+      // "salaryConfig.basicPay",
+      // "salaryConfig.earnings",
+      // "salaryConfig.deductions",
+      // "salaryConfig.employerContribution",
+      // "salaryConfig.allowances",
+      // "salaryConfig.deduction",
+      // "salaryConfig.professionalTax",
+      // "salaryConfig.LWF",
+      // "salaryConfig.LWF.state",
+      // "salaryConfig.LWF.stateTaxRules",
+      // "salaryConfig.professionalTax.state",
+      // "salaryConfig.professionalTax.stateTaxRules",
+      // "salaryConfig.employersContributions",
+      // "salaryConfig.employeeDeductions",
+      // "salaryConfig.adminCharges",
+      // "salaryConfig.stateTaxes",
+      // "salaryConfig.id",
+      // "salaryConfig.professionalTax.id",
+      // "salaryConfig.professionalTax.state",
+      // "salaryConfig.professionalTax.stateTaxRules",
+      // "salaryConfig.LWF.id",
+      // "salaryConfig.LWF.state",
+      // "salaryConfig.LWF.stateTaxRules",
       "assignedUser.PFAccountNumber",
       "assignedUser.ESIAccountNumber",
       "assignedUser.pfTracking",
       "assignedUser.esiTracking",
+      "salaryConfigTracking",
       "id",
     ],
 
     limit: -1,
   });
+ 
+const trackingIds = data.flatMap((item) =>
+  Object.values(item.salaryConfigTracking || {}).flatMap((year) => Object.values(year))
+);
+
+const allConfigIds = data.flatMap((item) => {
+  const [targetYear, targetMonth] = date
+    ? [Number(date.split("-")[0]), Number(date.split("-")[1])]
+    : [];
+
+  const tracking = item.salaryConfigTracking || {};
+  const id =
+    tracking[targetYear]?.[targetMonth] ||
+    Object.entries(tracking[targetYear] || {})
+      .filter(([m]) => Number(m) < targetMonth)
+      .pop()?.[1] ||
+    null;
+
+  return id ? [id] : [];
+});
+
+const allConfigIdsToFetch = [...new Set([...allConfigIds, ...trackingIds])];
+
+const salarySettingService = new ItemsService("salarySetting", {
+  schema,
+  accountability,
+});
+const salarySettings = allConfigIdsToFetch.length
+  ? await salarySettingService.readByQuery({
+      filter: { id: { _in: allConfigIdsToFetch } },
+      fields: [
+        "basicPay",
+        "earnings",
+        "deductions",
+        "employerContribution",
+        "allowances",
+        "deduction",
+        "professionalTax",
+        "LWF",
+        "LWF.state",
+        "LWF.stateTaxRules",
+        "professionalTax.state",
+        "professionalTax.stateTaxRules",
+        "employersContributions",
+        "employeeDeductions",
+        "adminCharges",
+        "stateTaxes",
+        "id",
+      ],
+      limit: -1,
+    })
+  : [];
+
+if (salarySettings.length){
+  data.forEach((item) => {
+    const [targetYear, targetMonth] = date
+      ? [Number(date.split("-")[0]), Number(date.split("-")[1])]
+      : [];
+
+    const tracking = item.salaryConfigTracking || {};
+    const directMatch =
+      tracking[targetYear]?.[String(targetMonth).padStart(2, "0")] || null;
+
+   const previousMatch =
+  Object.entries(tracking[targetYear] || {})
+    .map(([m, v]) => [Number(m), v])
+    .filter(([m]) => m < targetMonth)
+    .sort((a, b) => a[0] - b[0])
+    .pop()?.[1] || null;
+
+
+    const id = directMatch || previousMatch || null;
+
+
+    if (id) {
+      item.salaryConfig = salarySettings.find((cfg) => cfg.id == id) || null;
+    } else {
+      item.salaryConfig = null;
+    }
+  });}
 
   return data;
 };
@@ -188,20 +272,20 @@ const calculateMonthlySalaryBreakdown = (
 ) => {
   const roundToOneDecimal = (value) => Math.round(value * 10) / 10;
 
-  const annualCTC = salaryBreakdownData?.ctc;
+  const monthlyCTC = salaryBreakdownData?.monthlyCtc;
   const salaryConfig = employeeData?.salaryConfig;
 
-  // let pfTracking = true;
-  // if (date && employeeData.assignedUser?.pfTracking) {
-  //   pfTracking = date >= employeeData.assignedUser.pfTracking;
-  // }
+  //   let pfTracking = true;
+  //   if (date && employeeData.assignedUser?.pfTracking) {
+  //     pfTracking = date >= employeeData.assignedUser.pfTracking;
+  //   }
 
-  // let esiTracking = true;
-  // if (date && employeeData.assignedUser?.esiTracking) {
-  //   esiTracking = date >= employeeData.assignedUser.esiTracking;
-  // }
+  //   let esiTracking = true;
+  //   if (date && employeeData.assignedUser?.esiTracking) {
+  //     esiTracking = date >= employeeData.assignedUser.esiTracking;
+  //   }
 
-  if (!annualCTC || isNaN(annualCTC) || !salaryConfig) {
+  if (!monthlyCTC || isNaN(monthlyCTC) || !salaryConfig) {
     return null;
   }
 
@@ -220,8 +304,6 @@ const calculateMonthlySalaryBreakdown = (
   const adminCharges = salaryConfig.adminCharges || { enable: false };
   const lwf = salaryConfig.LWF || {};
   const professionalTax = salaryConfig.professionalTax || {};
-
-  const monthlyCTC = roundToOneDecimal(annualCTC / 12);
 
   let fixedEarningsTotal = 0;
   earnings.forEach((item) => {
@@ -321,10 +403,7 @@ const calculateMonthlySalaryBreakdown = (
     const employerPFIncludedInCTC =
       salaryBreakdownData?.employersContribution?.EmployerPF?.includedInCTC ??
       employerPF?.withinCTC;
-    if (
-      employerPFIncludedInCTC &&
-      employeeData.assignedUser?.PFAccountNumber
-    ) {
+    if (employerPFIncludedInCTC && employeeData.assignedUser?.PFAccountNumber) {
       if (Number(employerPF.selectedOption) === 1800) {
         employerPfTotal = Math.min(
           roundToOneDecimal(pfBaseAmount * 0.12),
@@ -342,7 +421,7 @@ const calculateMonthlySalaryBreakdown = (
       employerESI?.withinCTC;
     if (
       employerESIIncludedInCTC &&
-      employeeData.assignedUser?.ESIAccountNumber 
+      employeeData.assignedUser?.ESIAccountNumber
     ) {
       if (monthlyCTC <= ESI_THRESHOLD) {
         employerEsiTotal = Math.min(
@@ -353,10 +432,7 @@ const calculateMonthlySalaryBreakdown = (
     }
 
     let epfAdmin = 0;
-    if (
-      employerPFIncludedInCTC &&
-      employeeData.assignedUser?.PFAccountNumber
-    ) {
+    if (employerPFIncludedInCTC && employeeData.assignedUser?.PFAccountNumber) {
       epfAdmin = Math.min(
         roundToOneDecimal(adminCharges?.enable ? 0.01 * pfBaseAmount : 0),
         150
@@ -531,7 +607,7 @@ const calculateMonthlySalaryBreakdown = (
     let finalValue = 0;
 
     if (key === "EmployerPF") {
-      if (employeeData.assignedUser?.PFAccountNumber  ) {
+      if (employeeData.assignedUser?.PFAccountNumber) {
         if (Number(item.selectedOption) === 1800) {
           finalValue = Math.min((totalAmount + basicPayValue) * 0.12, 1800);
         } else {
@@ -563,9 +639,7 @@ const calculateMonthlySalaryBreakdown = (
   });
 
   const adminAmount =
-    adminCharges?.enable &&
-    employeeData.assignedUser?.PFAccountNumber 
-    
+    adminCharges?.enable && employeeData.assignedUser?.PFAccountNumber
       ? Math.min(roundToOneDecimal(finalPfBaseAmount * 0.01), 150)
       : 0;
   const updatedEmployeeContributions = Object.entries(
@@ -585,7 +659,7 @@ const calculateMonthlySalaryBreakdown = (
 
     let finalValue = 0;
 
-    if (key === "EmployeePF" ) {
+    if (key === "EmployeePF") {
       if (employeeData.assignedUser?.PFAccountNumber) {
         if (Number(item.selectedOption) === 1800) {
           finalValue = Math.min((totalAmount + basicPayValue) * 0.12, 1800);
@@ -596,7 +670,7 @@ const calculateMonthlySalaryBreakdown = (
         finalValue = 0;
       }
     } else if (key === "EmployeeESI") {
-      if (employeeData.assignedUser?.ESIAccountNumber ) {
+      if (employeeData.assignedUser?.ESIAccountNumber) {
         finalValue =
           monthlyCTC <= ESI_THRESHOLD
             ? Math.min((totalAmount + basicPayValue) * 0.0075, 157.5)
@@ -673,11 +747,13 @@ const calculateMonthlySalaryBreakdown = (
     0
   );
   const netSalary =
-    totalEarnings + totalEmployer - (totalEmployee + totalDeductions+ totalEmployer);
+    totalEarnings +
+    totalEmployer -
+    (totalEmployee + totalDeductions + totalEmployer);
 
   return {
     id: salaryBreakdownData.id,
-    annualCTC: Math.round(annualCTC),
+
     monthlyCTC: Math.round(monthlyCTC),
     basicPayValue: roundToOneDecimal(basicPayValue),
     totalEarnings: Math.round(totalEarnings),

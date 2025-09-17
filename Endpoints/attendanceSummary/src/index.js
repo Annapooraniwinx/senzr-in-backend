@@ -45,24 +45,15 @@ module.exports = function registerEndpoint(router, { services }) {
   };
 
   router.get("/", async (req, res) => {
-    console.log("Request received:", req.url);
     const filter = req.query.filter || {};
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 500;
     const offset = (page - 1) * limit;
 
     try {
-      console.log("Processing request with filter:", JSON.stringify(filter));
-
       const betweenDates = filter._and?.[0]?.date?._between;
       const employeeIdFilter = filter._and?.[1]?.employeeId;
       const tenantIdFilter = filter._and?.[2]?.tenant?.tenantId?._eq;
-
-      console.log("Extracted filters:", {
-        betweenDates,
-        employeeIdFilter,
-        tenantIdFilter,
-      });
 
       if (!betweenDates || betweenDates.length !== 2) {
         console.log("Invalid date range:", betweenDates);
@@ -84,20 +75,14 @@ module.exports = function registerEndpoint(router, { services }) {
             : employeeIdFilter._in;
       }
 
-      console.log("Parsed employee IDs:", employeeIds);
-
       if (!employeeIds.length) {
-        console.log("No employee IDs found");
         return res.status(400).json({ error: "Employee IDs required" });
       }
       let totalEmployees = employeeIds.length;
-      console.log("Using total employees count:", totalEmployees);
 
       const paginatedEmployeeIds = employeeIds.slice(offset, offset + limit);
-      console.log("Paginated employee IDs:", paginatedEmployeeIds);
 
       try {
-        console.log("Creating attendance cycle service");
         const attendanceCycleService = new ItemsService("attendanceCycle", {
           schema: req.schema,
           accountability: req.accountability,
@@ -356,7 +341,7 @@ module.exports = function registerEndpoint(router, { services }) {
               const [h, m, s] = record.lateBy.split(":").map(Number);
               const totalHours = h + m / 60 + s / 3600;
 
-              empData.lateData = { leave: leaveType };
+              empData.lateData = { leave: leaveType, lateBy: record.lateBy };
 
               if (totalHours <= 2) {
                 empData.lateComing += 0.25;
@@ -379,6 +364,7 @@ module.exports = function registerEndpoint(router, { services }) {
               );
               empData.lateData = {
                 mode: "fixed",
+                lateBy: record.lateBy,
                 leave: empData.totalLateDuration,
               };
             }
@@ -461,16 +447,22 @@ module.exports = function registerEndpoint(router, { services }) {
               empData.unpaidLeave += 1;
               break;
             case "weekOff":
+              empData.weekOff += 1;
+              break;
             case "weekoffPresent":
               empData.weekOffOT += 1;
+              empData.totalPayableDays += 1;
               empData.weekOffOTHours = addTime(
                 empData.weekOffOTHours || "00:00:00",
                 fullDayTime
               );
               break;
             case "holiday":
+              empData.holiday += 1;
+              break;
             case "holidayPresent":
               empData.holidayOT += 1;
+              empData.totalPayableDays += 1;
               empData.holidayOTHours = addTime(
                 empData.holidayOTHours || "00:00:00",
                 fullDayTime
