@@ -113,6 +113,8 @@ var src = function registerEndpoint(router, { services }) {
           "config.attendancePolicies.setMinWorkingHours",
           "config.attendancePolicies.setOverTimeLimit",
           "config.attendancePolicies.workingHoursType",
+          'config.attendancePolicies.workingHoursAmount',
+          'config.attendancePolicies.wrkHoursDayMode',
           "config.attendancePolicies.workinghrsDaysLimit",
           "config.attendancePolicies.wrkHoursDayMode",
           "config.attendancePolicies.earlyExitPenaltyAmt",
@@ -547,14 +549,12 @@ var src = function registerEndpoint(router, { services }) {
           const penaltyAmount = Number(
             attendancePolicy.lateEntryPenaltyAmt || 0
           );
-          const hoursOnly = Number(
-            (totalAttendanceCount?.totalLateDuration || "0:0").split(":")[0]
-          );
+          const dayCount = Number(totalAttendanceCount?.lateComing || "0");
 
           if (attendancePolicy.lateComingDayMode === "Custom Multiplier") {
-            lateEntryPenalty = penaltyAmount * perHourSalary * hoursOnly;
+            lateEntryPenalty = penaltyAmount * perHourSalary * dayCount;
           } else {
-            lateEntryPenalty = penaltyAmount * hoursOnly;
+            lateEntryPenalty = penaltyAmount * dayCount;
           }
         }
 
@@ -571,14 +571,14 @@ var src = function registerEndpoint(router, { services }) {
           const penaltyAmount = Number(
             attendancePolicy.earlyExitPenaltyAmt || 0
           );
-          const hoursOnly = Number(
-            (totalAttendanceCount?.totalEarlyDuration || "0:0").split(":")[0]
+          const dayCount = Number(
+            totalAttendanceCount?.earlyLeaving || "0"
           );
 
           if (attendancePolicy.earlyLeavingDayMode === "Custom Multiplier") {
-            earlyLeavingPenalty = penaltyAmount * perHourSalary * hoursOnly;
+            earlyLeavingPenalty = penaltyAmount * perHourSalary * dayCount;
           } else {
-            earlyLeavingPenalty = penaltyAmount * hoursOnly;
+            earlyLeavingPenalty = penaltyAmount * dayCount;
           }
         }
 
@@ -590,13 +590,16 @@ var src = function registerEndpoint(router, { services }) {
         }
 
         let workingHourPenalty = 0;
-        if (attendancePolicy?.workingHoursType === "fixed") {
-          const penaltyAmount = Number(
-            attendancePolicy.workingHoursAmount || 0
-          );
-          workingHourPenalty =
-            totalAttendanceCount.workingHours * penaltyAmount;
-        }
+       if (attendancePolicy?.workingHoursType === "fixed") {
+  const penaltyAmount = Number(attendancePolicy.workingHoursAmount || 0);
+  const dayCount = Number(totalAttendanceCount?.workingHours || "0");
+
+  if (attendancePolicy.wrkHoursDayMode === "Custom Multiplier") {
+    workingHourPenalty = penaltyAmount * perHourSalary * dayCount;
+  } else {
+    workingHourPenalty = penaltyAmount * dayCount;
+  }
+}
 
         let workingHourLeave = {};
         if (totalAttendanceCount?.workingHoursData?.leave) {
@@ -605,17 +608,17 @@ var src = function registerEndpoint(router, { services }) {
           workingHourLeave = { count: leaveCount, leave: leave };
         }
         const workingHoursOT =
-          parseInt(
-            (totalAttendanceCount?.workingDayOTHours || "0:0").split(":")[0]
+          parseInt(totalAttendanceCount?.workingDayOT || "0"
           ) || 0;
         const weekOffOT =
           parseInt(
-            (totalAttendanceCount?.weekOffOTHours || "0:0").split(":")[0]
+           totalAttendanceCount?.weekOffOT || "0"
           ) || 0;
         const holidayOT =
           parseInt(
-            (totalAttendanceCount?.holidayOTHours || "0:0").split(":")[0]
+            totalAttendanceCount?.holidayOT || "0"
           ) || 0;
+          
 
         let weekOffOTPay = 0;
 
