@@ -12,8 +12,8 @@ export default ({ action }, { services }) => {
       const workingHoursBit = accessLevelData.workingHours ? 1 : 0;
       const _24hrsBit = accessLevelData._24hrs ? 1 : 0;
       const maxWorkHoursBinary = maxWorkHours.toString(2).padStart(4, "0");
-
-      const bitmap = `${maxWorkHoursBinary}.${_24hrsBit}${workingHoursBit}${holidaysBit}${accessTypeBit}`;
+      const validHours = accessLevelData.Valid_hours || "24";
+      const bitmap = `${maxWorkHoursBinary}.${_24hrsBit}${workingHoursBit}${holidaysBit}${accessTypeBit},${validHours}`;
 
       console.log("🔵 AccessLevel Bitmap parts →", {
         maxWorkHoursBinary,
@@ -21,6 +21,7 @@ export default ({ action }, { services }) => {
         workingHoursBit,
         holidaysBit,
         accessTypeBit,
+        validHours,
       });
       console.log("✅ Final AccessLevel Bitmap:", bitmap);
 
@@ -216,6 +217,7 @@ export default ({ action }, { services }) => {
             "maxWorkHours",
             "accessType",
             "workingHours",
+            "Valid_hours",
           ],
         });
 
