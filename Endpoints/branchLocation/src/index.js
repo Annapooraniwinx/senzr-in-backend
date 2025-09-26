@@ -118,6 +118,38 @@ export default (router) => {
     }
   });
 
+  // 📌 Step 5: Google Maps Geolocation API (get current location)
+  router.post("/location/geolocate", async (req, res) => {
+    try {
+      // Optionally, you can send Wi-Fi or cell tower info in req.body for more accuracy
+      const payload = req.body || {};
+
+      const response = await axios.post(
+        `https://www.googleapis.com/geolocation/v1/geolocate?key=${GOOGLE_API_KEY}`,
+        payload,
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      const data = response.data;
+
+      res.json({
+        lat: data.location?.lat,
+        lng: data.location?.lng,
+        accuracy: data.accuracy, // in meters
+      });
+    } catch (err) {
+      console.error(err.response?.data || err.message);
+      res.status(500).json({
+        error: "Geolocation API failed",
+        detail: err.response?.data || err.message,
+      });
+    }
+  });
+
   // 📍 Convert address to lat/lng (Geocoding)
   router.post("/location/geocode", async (req, res) => {
     const { address } = req.body;
