@@ -83,8 +83,8 @@ async function processBatch(
 ) {
   console.log("🔄 Processing batch of", employeeIds.length, "employees");
 
-  // Step 1: Delete existing attendance data for the batch
-  await deleteExistingAttendance(
+  // Step 1: Delete existing non-manual attendance data for the batch and get manual map
+  const manualMap = await deleteExistingAttendance(
     employeeIds,
     startDate,
     endDate,
@@ -122,11 +122,18 @@ async function processBatch(
   // Step 4: Generate date range
   const dateRange = generateDateRange(startDate, endDate);
 
-  // Step 5: Process each employee for each date
+  // Step 5: Process each employee for each date, skipping manual dates
   const attendanceRecords = [];
 
   for (const employee of personalModules) {
+    const manualDates = manualMap.get(employee.id) || new Set();
     for (const date of dateRange) {
+      if (manualDates.has(date)) {
+        console.log(
+          `⏩ Skipping manual entry for employee ${employee.id} on ${date}`
+        );
+        continue;
+      }
       const record = calculateAttendanceForDate(
         employee,
         date,
@@ -183,7 +190,7 @@ async function deleteExistingAttendance(
   });
 
   console.log(
-    "🗑️ Deleting existing attendance records for",
+    "🗑️ Deleting existing non-manual attendance records for",
     employeeIds.length,
     "employees from",
     startDate,
@@ -193,7 +200,16 @@ async function deleteExistingAttendance(
     tenantId
   );
 
-  // Fetch all matching attendance record IDs
+  // Define manual types
+  const manualTypes = new Set([
+    "workFromHome",
+    "onDuty",
+    "halfDay",
+    "paidLeave",
+    "unPaidLeave",
+  ]);
+
+  // Fetch all matching attendance records with necessary fields
   const existingRecords = await attendanceService.readByQuery({
     filter: {
       _and: [
@@ -202,24 +218,46 @@ async function deleteExistingAttendance(
         { tenant: { _eq: tenantId } },
       ],
     },
-    fields: ["id"],
+    fields: ["id", "employeeId", "date", "attendance"],
     limit: -1, // Ensure all records are fetched
   });
 
-  console.log(
-    `🗑️ Found ${existingRecords.length} attendance records to delete`
-  );
+  console.log(`🗑️ Found ${existingRecords.length} attendance records in total`);
 
-  // Delete in batches of 100
+  // Separate manual and non-manual
+  const toDelete = [];
+  const manualMap = new Map();
+
+  existingRecords.forEach((record) => {
+    if (manualTypes.has(record.attendance)) {
+      if (!manualMap.has(record.employeeId)) {
+        manualMap.set(record.employeeId, new Set());
+      }
+      manualMap.get(record.employeeId).add(record.date);
+    } else {
+      toDelete.push(record.id);
+    }
+  });
+
+  // Log manual entries
+  console.log(`📌 Manual entries preserved for ${manualMap.size} employees`);
+  for (const [empId, dates] of manualMap.entries()) {
+    console.log(
+      `   👤 Employee ${empId}: ${dates.size} dates - ${Array.from(dates)
+        .sort()
+        .join(", ")}`
+    );
+  }
+
+  // Delete non-manual in batches of 100
   const batchSize = 100;
-  const recordIds = existingRecords.map((record) => record.id);
 
-  for (let i = 0; i < recordIds.length; i += batchSize) {
-    const batch = recordIds.slice(i, i + batchSize);
+  for (let i = 0; i < toDelete.length; i += batchSize) {
+    const batch = toDelete.slice(i, i + batchSize);
     console.log(
       `🗑️ Deleting batch ${Math.floor(i / batchSize) + 1} with ${
         batch.length
-      } records`
+      } non-manual records`
     );
 
     await attendanceService.deleteMany(batch);
@@ -230,7 +268,11 @@ async function deleteExistingAttendance(
     );
   }
 
-  console.log(`🗑️ Total deleted: ${recordIds.length} attendance records`);
+  console.log(
+    `🗑️ Total deleted: ${toDelete.length} non-manual attendance records`
+  );
+
+  return manualMap;
 }
 
 async function fetchPersonalModules(
