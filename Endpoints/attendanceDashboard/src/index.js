@@ -235,7 +235,6 @@ module.exports = function registerEndpoint(router, { services }) {
           "assignedDepartment.department_id.departmentName",
           "assignedBranch.branch_id.branchName",
           "assignedUser.id",
-          "reportingManager",
           "approver.id",
         ],
         limit: limit,
@@ -296,7 +295,6 @@ module.exports = function registerEndpoint(router, { services }) {
             emp.assignedDepartment?.department_id?.departmentName || "Finance",
           branch: emp.assignedBranch?.branch_id?.branchName || "Bangalore",
           userId: emp?.assignedUser?.id,
-          reportingManager: emp?.reportingManager,
         };
       });
 
@@ -338,7 +336,6 @@ module.exports = function registerEndpoint(router, { services }) {
           firstName: empDetails.firstName,
           department: empDetails.department,
           userId: empDetails.userId,
-          reportingManager: empDetails.reportingManager,
           branch: empDetails.branch,
           month: currentMonth,
           monthName: getMonthName(currentMonth),
@@ -398,6 +395,17 @@ module.exports = function registerEndpoint(router, { services }) {
         ],
       };
 
+      // Extract approver ID from the filter query
+      const approverId = req.query.filter?._and?.[1]?.approver?.id?._eq;
+
+      // Add approver filter if approverId is provided
+      if (approverId) {
+        personalModuleFilter._and.push({
+          approver: { id: { _eq: approverId } },
+        });
+      }
+
+      // Add search term filter if provided
       if (searchTerm) {
         personalModuleFilter._and.push({
           _or: [
@@ -425,6 +433,8 @@ module.exports = function registerEndpoint(router, { services }) {
           "assignedUser.last_name",
           "assignedDepartment.department_id.departmentName",
           "assignedBranch.branch_id.branchName",
+          "assignedUser.id",
+          "approver.id",
         ],
         limit: limit,
         offset: offset,
@@ -448,6 +458,7 @@ module.exports = function registerEndpoint(router, { services }) {
             limit,
             totalPages: 0,
             search: searchTerm,
+            approverId: approverId || null,
           },
         });
       }
@@ -484,6 +495,8 @@ module.exports = function registerEndpoint(router, { services }) {
           department:
             emp.assignedDepartment?.department_id?.departmentName || "Finance",
           branch: emp.assignedBranch?.branch_id?.branchName || "Bangalore",
+          userId: emp.assignedUser?.id,
+          approverId: emp.approver?.id,
         };
       });
 
@@ -525,6 +538,8 @@ module.exports = function registerEndpoint(router, { services }) {
           firstName: empDetails.firstName,
           department: empDetails.department,
           branch: empDetails.branch,
+          userId: empDetails.userId,
+          approverId: empDetails.approverId,
           leaveType: leaveType,
           ...summary,
         });
@@ -548,6 +563,7 @@ module.exports = function registerEndpoint(router, { services }) {
           limit,
           totalPages: Math.ceil(totalEmployees / limit),
           search: searchTerm,
+          approverId: approverId || null,
         },
       });
     } catch (error) {
