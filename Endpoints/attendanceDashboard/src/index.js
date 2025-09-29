@@ -176,8 +176,9 @@ module.exports = function registerEndpoint(router, { services }) {
       const currentMonth = now.getMonth() + 1;
 
       const userIdFilter = req.query.filter?._and?.[1]?._or || [];
-    const userId = userIdFilter[0]?.approver?.id?._eq || 
-                  userIdFilter[1]?.assignedUser?.id?._eq;
+      const userId =
+        userIdFilter[0]?.approver?.id?._eq ||
+        userIdFilter[1]?.assignedUser?.id?._eq;
 
       const { startDate, endDate } = calculateDateRange(
         currentYear,
@@ -207,14 +208,14 @@ module.exports = function registerEndpoint(router, { services }) {
         });
       }
 
-       if (userId) {
-      personalModuleFilter._and.push({
-        _or: [
-          { approver: { id: { _eq: userId } } },  
-          { assignedUser: { id: { _eq: userId } } }
-        ]
-      });
-    }
+      if (userId) {
+        personalModuleFilter._and.push({
+          _or: [
+            { approver: { id: { _eq: userId } } },
+            { assignedUser: { id: { _eq: userId } } },
+          ],
+        });
+      }
 
       const totalEmployeesResult = await personalModuleService.readByQuery({
         filter: personalModuleFilter,
@@ -988,32 +989,10 @@ module.exports = function registerEndpoint(router, { services }) {
           summary.absent += 0.5;
           record.leaveType = record.leaveType || "privilegeLeave";
         } else if (
-          context === "On Leave(½CL)" ||
-          context === "On Leave(1/2CL)" ||
-          context === "1/2CL"
-        ) {
-          summary.paidLeave += 0.5;
-          summary.absent += 0.5;
-          record.leaveType = record.leaveType || "casualLeave";
-        } else if (
           context === "1/2Present On Leave(1/2CL)" ||
           context === "1/2CL1/2P"
         ) {
           summary.present += 0.5;
-          summary.paidLeave += 0.5;
-          record.leaveType = record.leaveType || "casualLeave";
-        } else if (
-          context === "1/2Present On OD On Leave(1/2CL)" ||
-          context === "1/2CL1/2P(OD)"
-        ) {
-          summary.present += 0.5;
-          summary.paidLeave += 0.5;
-          record.leaveType = record.leaveType || "casualLeave";
-        } else if (
-          context === "Present On Leave(1/2CL)" ||
-          context === "1/2CLP"
-        ) {
-          summary.present += 1.0;
           summary.paidLeave += 0.5;
           record.leaveType = record.leaveType || "casualLeave";
         } else if (
@@ -1024,6 +1003,20 @@ module.exports = function registerEndpoint(router, { services }) {
           summary.paidLeave += 0.5;
           record.leaveType = record.leaveType || "privilegeLeave";
         } else if (
+          context === "1/2Present On Leave(1/2SL)" ||
+          context === "1/2SL1/2P"
+        ) {
+          summary.present += 0.5;
+          summary.paidLeave += 0.5;
+          record.leaveType = record.leaveType || "sickLeave";
+        } else if (
+          context === "Present On Leave(1/2CL)" ||
+          context === "1/2CLP"
+        ) {
+          summary.present += 1.0;
+          summary.paidLeave += 0.5;
+          record.leaveType = record.leaveType || "casualLeave";
+        } else if (
           context === "Present On Leave(1/2PL)" ||
           context === "1/2PLP"
         ) {
@@ -1031,10 +1024,40 @@ module.exports = function registerEndpoint(router, { services }) {
           summary.paidLeave += 0.5;
           record.leaveType = record.leaveType || "privilegeLeave";
         } else if (
+          context === "Present On Leave(1/2SL)" ||
+          context === "1/2SLP"
+        ) {
+          summary.present += 1.0;
+          summary.paidLeave += 0.5;
+          record.leaveType = record.leaveType || "sickLeave";
+        } else if (
+          context === "Present On OD On Leave(1/2CL)" ||
+          context === "1/2CLP(OD)"
+        ) {
+          summary.present += 1.0;
+          summary.paidLeave += 0.5;
+          summary.onDuty += 1.0;
+          record.leaveType = record.leaveType || "casualLeave";
+        } else if (
           context === "Present On OD On Leave(1/2PL)" ||
           context === "1/2PLP(OD)"
         ) {
           summary.present += 1.0;
+          summary.paidLeave += 0.5;
+          summary.onDuty += 1.0;
+          record.leaveType = record.leaveType || "privilegeLeave";
+        } else if (
+          context === "1/2Present On Leave(1/2CL)" ||
+          context === "1/2CL1/2P"
+        ) {
+          summary.present += 0.5;
+          summary.paidLeave += 0.5;
+          record.leaveType = record.leaveType || "casualLeave";
+        } else if (
+          context === "1/2Present On Leave(1/2PL)" ||
+          context === "1/2PL1/2P"
+        ) {
+          summary.present += 0.5;
           summary.paidLeave += 0.5;
           record.leaveType = record.leaveType || "privilegeLeave";
         } else if (
@@ -1045,12 +1068,73 @@ module.exports = function registerEndpoint(router, { services }) {
           summary.paidLeave += 0.5;
           record.leaveType = record.leaveType || "sickLeave";
         } else if (
-          context === "Present On Leave(1/2SL)" ||
-          context === "1/2SLP"
+          context === "1/2Present On Leave(1/2EL)" ||
+          context === "1/2EL1/2P"
+        ) {
+          summary.present += 0.5;
+          summary.paidLeave += 0.5;
+          record.leaveType = record.leaveType || "earnedleave";
+        } else if (
+          context === "Present On Leave(1/2EL)" ||
+          context === "1/2ELP"
         ) {
           summary.present += 1.0;
           summary.paidLeave += 0.5;
+          record.leaveType = record.leaveType || "earnedleave";
+        } else if (
+          context === "Present On OD On Leave(1/2EL)" ||
+          context === "1/2ELP(OD)"
+        ) {
+          summary.present += 1.0;
+          summary.paidLeave += 0.5;
+          summary.onDuty += 1.0;
+          record.leaveType = record.leaveType || "earnedleave";
+        } else if (
+          context === "1/2Present On Leave(1/2ML)" ||
+          context === "1/2ML1/2P"
+        ) {
+          summary.present += 0.5;
+          summary.paidLeave += 0.5;
+          record.leaveType = record.leaveType || "maternityleave";
+        } else if (
+          context === "Present On Leave(1/2ML)" ||
+          context === "1/2MLP"
+        ) {
+          summary.present += 1.0;
+          summary.paidLeave += 0.5;
+          record.leaveType = record.leaveType || "maternityleave";
+        } else if (
+          context === "Present On OD On Leave(1/2ML)" ||
+          context === "1/2MLP(OD)"
+        ) {
+          summary.present += 1.0;
+          summary.paidLeave += 0.5;
+          summary.onDuty += 1.0;
+          record.leaveType = record.leaveType || "maternityleave";
+        } else if (
+          context === "On Leave(½CL)" ||
+          context === "On Leave(1/2CL)" ||
+          context === "1/2CL"
+        ) {
+          summary.paidLeave += 0.5;
+          summary.absent += 0.5;
+          record.leaveType = record.leaveType || "casualLeave";
+        } else if (context === "On Leave(1/2PL)" || context === "1/2PL") {
+          summary.paidLeave += 0.5;
+          summary.absent += 0.5;
+          record.leaveType = record.leaveType || "privilegeLeave";
+        } else if (context === "On Leave(1/2SL)" || context === "1/2SL") {
+          summary.paidLeave += 0.5;
+          summary.absent += 0.5;
           record.leaveType = record.leaveType || "sickLeave";
+        } else if (context === "On Leave(1/2EL)" || context === "1/2EL") {
+          summary.paidLeave += 0.5;
+          summary.absent += 0.5;
+          record.leaveType = record.leaveType || "earnedleave";
+        } else if (context === "On Leave(1/2ML)" || context === "1/2ML") {
+          summary.paidLeave += 0.5;
+          summary.absent += 0.5;
+          record.leaveType = record.leaveType || "maternityleave";
         } else if (context === "On Leave(3/4CL)" || context === "3/4CL") {
           summary.paidLeave += 0.75;
           summary.absent += 0.25;
@@ -1093,6 +1177,34 @@ module.exports = function registerEndpoint(router, { services }) {
         } else if (context === "On Leave(SL)" || context === "SL") {
           summary.paidLeave += 1.0;
           record.leaveType = record.leaveType || "sickLeave";
+        } else if (context === "On Leave(EL)" || context === "EL") {
+          summary.paidLeave += 1.0;
+          record.leaveType = record.leaveType || "earnedleave";
+        } else if (context === "Present On Leave(EL)" || context === "ELP") {
+          summary.present += 1.0;
+          record.leaveType = record.leaveType || "earnedleave";
+        } else if (
+          context === "Present On OD On Leave(EL)" ||
+          context === "ELP(OD)"
+        ) {
+          summary.present += 1.0;
+          summary.paidLeave += 1.0;
+          summary.onDuty += 1.0;
+          record.leaveType = record.leaveType || "earnedleave";
+        } else if (context === "On Leave(ML)" || context === "ML") {
+          summary.paidLeave += 1.0;
+          record.leaveType = record.leaveType || "maternityleave";
+        } else if (context === "Present On Leave(ML)" || context === "MLP") {
+          summary.present += 1.0;
+          record.leaveType = record.leaveType || "maternityleave";
+        } else if (
+          context === "Present On OD On Leave(ML)" ||
+          context === "MLP(OD)"
+        ) {
+          summary.present += 1.0;
+          summary.paidLeave += 1.0;
+          summary.onDuty += 1.0;
+          record.leaveType = record.leaveType || "maternityleave";
         } else if (
           context === "WeeklyOff 1/2Present" ||
           context === "WOA1/2P"
@@ -1131,6 +1243,12 @@ module.exports = function registerEndpoint(router, { services }) {
           } else if (context.includes("PL") || context.includes("Privilege")) {
             summary.paidLeave += dayValue;
             record.leaveType = record.leaveType || "privilegeLeave";
+          } else if (context.includes("EL") || context.includes("Earned")) {
+            summary.paidLeave += dayValue;
+            record.leaveType = record.leaveType || "earnedleave";
+          } else if (context.includes("ML") || context.includes("Maternity")) {
+            summary.paidLeave += dayValue;
+            record.leaveType = record.leaveType || "maternityleave";
           } else {
             summary.paidLeave += dayValue;
           }
@@ -1298,6 +1416,7 @@ module.exports = function registerEndpoint(router, { services }) {
 
     return dates;
   }
+
   function getMonthName(monthNumber) {
     const months = [
       "January",
