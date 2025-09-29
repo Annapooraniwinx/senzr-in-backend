@@ -20,12 +20,13 @@ module.exports = function registerEndpoint(router, { services }) {
     earlyLeaving: 0,
     earlyLeavingData: {},
     totalEarlyDuration: "00:00:00",
-
+    deductedEarlyDuration: "00:00:00",
     lateEntryCount: 0,
     lateComingAllowed: 0,
     lateComing: 0,
     lateData: {},
     totalLateDuration: "00:00:00",
+    deductedLateDuration: "00:00:00",
 
     workingHoursCount: 0,
     workingHoursAllowed: 0,
@@ -175,6 +176,11 @@ module.exports = function registerEndpoint(router, { services }) {
             "config.attendancePolicies.weekOffType",
             "config.attendancePolicies.publicHolidayType",
             "config.attendancePolicies.extraHoursType",
+            "config.attendancePolicies.exitTimeLimit",
+            "config.attendancePolicies.entryTimeLimit",
+            "config.attendancePolicies.isOverTime",
+            "config.attendancePolicies.isWorkingHours",
+
             "config.attendanceSettings",
             "leaves.leaveBalance",
           ],
@@ -219,9 +225,7 @@ module.exports = function registerEndpoint(router, { services }) {
           } else if (includeHolidays && record.attendance === "holiday") {
             payableDay = 1;
           }
-
           empData.totalPayableDays += payableDay;
-
           const earlyExitAllowed =
             personalModuleMap[record.employeeId]?.config?.attendancePolicies
               ?.earlyExitAllowed;
@@ -241,7 +245,10 @@ module.exports = function registerEndpoint(router, { services }) {
               personalModuleMap[record.employeeId]?.config?.attendancePolicies
                 ?.setExitTimeLimit
           ) {
-            empData.earlyLeavingCount += 1;
+            empData.totalEarlyDuration = addTime(
+              empData.totalEarlyDuration || "00:00:00",
+              record.earlyDeparture
+            );
 
             const earlyLeavingType =
               personalModuleMap[record.employeeId]?.config?.attendancePolicies
@@ -252,55 +259,58 @@ module.exports = function registerEndpoint(router, { services }) {
             const leaveType =
               personalModuleMap[record.employeeId]?.config?.attendancePolicies
                 ?.earlyLeavingLeave;
+            const earlyEnabled =
+              personalModuleMap[record.employeeId]?.config?.attendancePolicies
+                ?.exitTimeLimit;
+            empData.earlyLeavingCount += 1;
+            const allowedEarly = empData.earlyLeavingCount - earlyExitAllowed;
+            if (allowedEarly > 0 && earlyEnabled) {
+              if (earlyLeavingType === "lop") {
+                empData.earlyLeavingData = {
+                  mode: dayMode,
+                  leave: earlyLeavingType,
+                };
+                if (dayMode === "quarter") {
+                  empData.earlyLeaving += 0.25;
+                  empData.totalPayableDays -= 0.25;
+                } else if (dayMode === "half") {
+                  empData.earlyLeaving += 0.5;
+                  empData.totalPayableDays -= 0.5;
+                } else {
+                  empData.earlyLeaving += 1;
+                  empData.totalPayableDays -= 1;
+                }
+              } else if (earlyLeavingType === "leave") {
+                const [h, m, s] = record.earlyDeparture.split(":").map(Number);
+                const totalHours = h + m / 60 + s / 3600;
 
-            const exceededCount = empData.earlyLeavingCount - earlyExitAllowed;
-            if (exceededCount <= 0) return;
+                empData.earlyLeavingData = { leave: leaveType };
 
-            if (earlyLeavingType === "lop") {
-              empData.earlyLeavingData = {
-                mode: dayMode,
-                leave: earlyLeavingType,
-              };
-              if (dayMode === "quarterDay") {
-                empData.earlyLeaving += 0.25;
-                empData.totalPayableDays -= 0.25;
-              } else if (dayMode === "halfDay") {
-                empData.earlyLeaving += 0.5;
-                empData.totalPayableDays -= 0.5;
-              } else {
+                if (totalHours <= 2) {
+                  empData.earlyLeaving += 0.25;
+                  empData.earlyLeavingData.mode = "Quarter Day";
+                } else if (totalHours <= 4) {
+                  empData.earlyLeaving += 0.5;
+                  empData.earlyLeavingData.mode = "Half Day";
+                } else if (totalHours <= 6) {
+                  empData.earlyLeaving += 0.75;
+                  empData.earlyLeavingData.mode = "0.75 Day";
+                } else {
+                  empData.earlyLeaving += 1;
+                  empData.earlyLeavingData.mode = "Full Day";
+                }
+              } else if (earlyLeavingType === "fixed") {
                 empData.earlyLeaving += 1;
-                empData.totalPayableDays -= 1;
+
+                empData.earlyLeavingData = {
+                  mode: "fixed",
+                  leave: empData.totalEarlyDuration,
+                };
               }
-            } else if (earlyLeavingType === "leave") {
-              const [h, m, s] = record.earlyDeparture.split(":").map(Number);
-              const totalHours = h + m / 60 + s / 3600;
-
-              empData.earlyLeavingData = { leave: leaveType };
-
-              if (totalHours <= 2) {
-                empData.earlyLeaving += 0.25;
-                empData.earlyLeavingData.mode = "Quarter Day";
-              } else if (totalHours <= 4) {
-                empData.earlyLeaving += 0.5;
-                empData.earlyLeavingData.mode = "Half Day";
-              } else if (totalHours <= 6) {
-                empData.earlyLeaving += 0.75;
-                empData.earlyLeavingData.mode = "0.75 Day";
-              } else {
-                empData.earlyLeaving += 1;
-                empData.earlyLeavingData.mode = "Full Day";
-              }
-            } else if (earlyLeavingType === "fixed") {
-              empData.earlyLeaving += 1;
-
-              empData.totalEarlyDuration = addTime(
-                empData.totalEarlyDuration || "00:00:00",
+              empData.deductedEarlyDuration = addTime(
+                empData.deductedEarlyDuration || "00:00:00",
                 record.earlyDeparture
               );
-              empData.earlyLeavingData = {
-                mode: "fixed",
-                leave: empData.totalEarlyDuration,
-              };
             }
           }
 
@@ -310,7 +320,10 @@ module.exports = function registerEndpoint(router, { services }) {
               personalModuleMap[record.employeeId]?.config?.attendancePolicies
                 ?.setEntryTimeLimit
           ) {
-            empData.lateEntryCount += 1;
+            empData.totalLateDuration = addTime(
+              empData.totalLateDuration || "00:00:00",
+              record.lateBy
+            );
 
             const lateComingType =
               personalModuleMap[record.employeeId]?.config?.attendancePolicies
@@ -321,52 +334,59 @@ module.exports = function registerEndpoint(router, { services }) {
             const leaveType =
               personalModuleMap[record.employeeId]?.config?.attendancePolicies
                 ?.lateCommingLeave;
+            const lateEnabled =
+              personalModuleMap[record.employeeId]?.config?.attendancePolicies
+                ?.entryTimeLimit;
+            empData.lateEntryCount += 1;
+            const allowedlate = empData.lateEntryCount - lateComingAllowed;
+            {
+              if (allowedlate > 0 && lateEnabled)
+                if (lateComingType === "lop") {
+                  empData.lateData = { mode: dayMode, leave: lateComingType };
+                  if (dayMode === "quarter") {
+                    empData.lateComing += 0.25;
+                    empData.totalPayableDays -= 0.25;
+                  } else if (dayMode === "half") {
+                    empData.lateComing += 0.5;
+                    empData.totalPayableDays -= 0.5;
+                  } else {
+                    empData.lateComing += 1;
+                    empData.totalPayableDays -= 1;
+                  }
+                } else if (lateComingType === "leave") {
+                  const [h, m, s] = record.lateBy.split(":").map(Number);
+                  const totalHours = h + m / 60 + s / 3600;
 
-            const exceededCount = empData.lateEntryCount - lateComingAllowed;
-            if (exceededCount <= 0) return;
+                  empData.lateData = {
+                    leave: leaveType,
+                    lateBy: record.lateBy,
+                  };
 
-            if (lateComingType === "lop") {
-              empData.lateData = { mode: dayMode, leave: lateComingType };
-              if (dayMode === "quarter") {
-                empData.lateComing += 0.25;
-                empData.totalPayableDays -= 0.25;
-              } else if (dayMode === "half") {
-                empData.lateComing += 0.5;
-                empData.totalPayableDays -= 0.5;
-              } else {
-                empData.lateComing += 1;
-                empData.totalPayableDays -= 1;
-              }
-            } else if (lateComingType === "leave") {
-              const [h, m, s] = record.lateBy.split(":").map(Number);
-              const totalHours = h + m / 60 + s / 3600;
-
-              empData.lateData = { leave: leaveType, lateBy: record.lateBy };
-
-              if (totalHours <= 2) {
-                empData.lateComing += 0.25;
-                empData.lateData.mode = "Quarter Day";
-              } else if (totalHours <= 4) {
-                empData.lateComing += 0.5;
-                empData.lateData.mode = "Half Day";
-              } else if (totalHours <= 6) {
-                empData.lateComing += 0.75;
-                empData.lateData.mode = "0.75 Day";
-              } else {
-                empData.lateComing += 1;
-                empData.lateData.mode = "Full Day";
-              }
-            } else if (lateComingType === "fixed") {
-              empData.lateComing += 1;
-              empData.totalLateDuration = addTime(
-                empData.totalLateDuration || "00:00:00",
+                  if (totalHours <= 2) {
+                    empData.lateComing += 0.25;
+                    empData.lateData.mode = "Quarter Day";
+                  } else if (totalHours <= 4) {
+                    empData.lateComing += 0.5;
+                    empData.lateData.mode = "Half Day";
+                  } else if (totalHours <= 6) {
+                    empData.lateComing += 0.75;
+                    empData.lateData.mode = "0.75 Day";
+                  } else {
+                    empData.lateComing += 1;
+                    empData.lateData.mode = "Full Day";
+                  }
+                } else if (lateComingType === "fixed") {
+                  empData.lateComing += 1;
+                  empData.lateData = {
+                    mode: "fixed",
+                    lateBy: record.lateBy,
+                    leave: empData.totalLateDuration,
+                  };
+                }
+              empData.deductedLateDuration = addTime(
+                empData.deductedLateDuration || "00:00:00",
                 record.lateBy
               );
-              empData.lateData = {
-                mode: "fixed",
-                lateBy: record.lateBy,
-                leave: empData.totalLateDuration,
-              };
             }
           }
 
@@ -375,8 +395,6 @@ module.exports = function registerEndpoint(router, { services }) {
             personalModuleMap[record.employeeId]?.config?.attendancePolicies
               ?.setMinWorkingHours
           ) {
-            empData.workingHoursCount += 1;
-
             const workingHoursType =
               personalModuleMap[record.employeeId]?.config?.attendancePolicies
                 ?.workingHoursType;
@@ -386,52 +404,58 @@ module.exports = function registerEndpoint(router, { services }) {
             const leaveType =
               personalModuleMap[record.employeeId]?.config?.attendancePolicies
                 ?.wrkHoursLeave;
-
-            const exceededCount =
+            const workEnabled =
+              personalModuleMap[record.employeeId]?.config?.attendancePolicies
+                ?.isWorkingHours;
+            empData.workingHoursCount += 1;
+            const allowedworkingHours =
               empData.workingHoursCount - workingHoursAllowed;
-            if (exceededCount <= 0) return;
-
-            if (workingHoursType === "lop") {
-              empData.workingHoursData = {
-                mode: dayMode,
-                leave: workingHoursType,
-              };
-              if (dayMode === "quarterDay") {
-                empData.workingHours += 0.25;
-                empData.totalPayableDays -= 0.25;
-              } else if (dayMode === "halfDay") {
-                empData.workingHours += 0.5;
-                empData.totalPayableDays -= 0.5;
+            if (allowedworkingHours > 0 && workEnabled) {
+              if (workingHoursType === "lop") {
+                empData.workingHoursData = {
+                  mode: dayMode,
+                  leave: workingHoursType,
+                };
+                if (dayMode === "quarter") {
+                  empData.workingHours += 0.25;
+                  empData.totalPayableDays -= 0.25;
+                } else if (dayMode === "half") {
+                  empData.workingHours += 0.5;
+                  empData.totalPayableDays -= 0.5;
+                } else {
+                  empData.workingHours += 1;
+                  empData.totalPayableDays -= 1;
+                }
+              } else if (workingHoursType === "leave") {
+                empData.workingHoursData = { mode: dayMode, leave: leaveType };
+                if (dayMode === "quarterDay") {
+                  empData.workingHours += 0.25;
+                } else if (dayMode === "halfDay") {
+                  empData.workingHours += 0.5;
+                } else {
+                  empData.workingHours += 1;
+                }
               } else {
-                empData.workingHours += 1;
-                empData.totalPayableDays -= 1;
-              }
-            } else if (workingHoursType === "leave") {
-              empData.workingHoursData = { mode: dayMode, leave: leaveType };
-              if (dayMode === "quarterDay") {
-                empData.workingHours += 0.25;
-              } else if (dayMode === "halfDay") {
-                empData.workingHours += 0.5;
-              } else {
+                empData.workingHoursData = {
+                  mode: "fixed",
+                  leave: "fixedAMount",
+                };
                 empData.workingHours += 1;
               }
-            } else {
-              empData.workingHoursData = {
-                mode: "fixed",
-                leave: "fixedAMount",
-              };
-              empData.workingHours += 1;
             }
           }
 
           const fullDayTime = addTime(
-            record.workHours || "00:00:00",
+            "00:00:00",
             record.overTime || "00:00:00"
           );
-
+          const otEnabled =
+            personalModuleMap[record.employeeId]?.config?.attendancePolicies
+              ?.isOverTime;
           switch (record.attendance) {
             case "present":
-              if (record.overTime && record.overTime !== "00:00:00") {
+              // empData.totalPayableDays += 1;
+              if (otEnabled && record.overTime !== "00:00:00") {
                 empData.workingDayOT += 1;
                 empData.workingDayOTHours = addTime(
                   empData.workingDayOTHours || "00:00:00",
@@ -441,40 +465,47 @@ module.exports = function registerEndpoint(router, { services }) {
 
               break;
             case "paidLeave":
+              // empData.totalPayableDays += 1;
               empData.paidLeave += 1;
               break;
             case "unPaidLeave":
               empData.unpaidLeave += 1;
               break;
-            case "weekOff":
-              empData.weekOff += 1;
-              break;
+            // case "weekOff":
+            //   empData.weekOff += 1;
+            //   break;
             case "weekoffPresent":
               empData.weekOffOT += 1;
-              empData.totalPayableDays += 1;
-              empData.weekOffOTHours = addTime(
-                empData.weekOffOTHours || "00:00:00",
-                fullDayTime
-              );
+              // empData.totalPayableDays += 1;
+              if (otEnabled) {
+                empData.weekOffOTHours = addTime(
+                  empData.weekOffOTHours || "00:00:00",
+                  fullDayTime
+                );
+              }
               break;
-            case "holiday":
-              empData.holiday += 1;
-              break;
+            // case "holiday":
+            //   empData.holiday += 1;
+            //   break;
             case "holidayPresent":
               empData.holidayOT += 1;
-              empData.totalPayableDays += 1;
-              empData.holidayOTHours = addTime(
-                empData.holidayOTHours || "00:00:00",
-                fullDayTime
-              );
+              // empData.totalPayableDays += 1;
+              if (otEnabled) {
+                empData.holidayOTHours = addTime(
+                  empData.holidayOTHours || "00:00:00",
+                  fullDayTime
+                );
+              }
               break;
 
             case "workFromHome":
               empData.workFromHomeOT += 1;
-              empData.workFromHomeOTHours = addTime(
-                empData.workFromHomeOTHours || "00:00:00",
-                fullDayTime
-              );
+              if (otEnabled) {
+                empData.workFromHomeOTHours = addTime(
+                  empData.workFromHomeOTHours || "00:00:00",
+                  fullDayTime
+                );
+              }
               break;
           }
         });
