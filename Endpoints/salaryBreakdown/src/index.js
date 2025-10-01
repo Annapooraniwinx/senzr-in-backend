@@ -321,10 +321,7 @@ const calculateMonthlySalaryBreakdown = (
     const employerPFIncludedInCTC =
       salaryBreakdownData?.employersContribution?.EmployerPF?.includedInCTC ??
       employerPF?.withinCTC;
-    if (
-      employerPFIncludedInCTC &&
-      employeeData.assignedUser?.PFAccountNumber
-    ) {
+    if (employerPFIncludedInCTC && employeeData.assignedUser?.PFAccountNumber) {
       if (Number(employerPF.selectedOption) === 1800) {
         employerPfTotal = Math.min(
           roundToOneDecimal(pfBaseAmount * 0.12),
@@ -342,7 +339,7 @@ const calculateMonthlySalaryBreakdown = (
       employerESI?.withinCTC;
     if (
       employerESIIncludedInCTC &&
-      employeeData.assignedUser?.ESIAccountNumber 
+      employeeData.assignedUser?.ESIAccountNumber
     ) {
       if (monthlyCTC <= ESI_THRESHOLD) {
         employerEsiTotal = Math.min(
@@ -353,10 +350,7 @@ const calculateMonthlySalaryBreakdown = (
     }
 
     let epfAdmin = 0;
-    if (
-      employerPFIncludedInCTC &&
-      employeeData.assignedUser?.PFAccountNumber
-    ) {
+    if (employerPFIncludedInCTC && employeeData.assignedUser?.PFAccountNumber) {
       epfAdmin = Math.min(
         roundToOneDecimal(adminCharges?.enable ? 0.01 * pfBaseAmount : 0),
         150
@@ -531,7 +525,7 @@ const calculateMonthlySalaryBreakdown = (
     let finalValue = 0;
 
     if (key === "EmployerPF") {
-      if (employeeData.assignedUser?.PFAccountNumber  ) {
+      if (employeeData.assignedUser?.PFAccountNumber) {
         if (Number(item.selectedOption) === 1800) {
           finalValue = Math.min((totalAmount + basicPayValue) * 0.12, 1800);
         } else {
@@ -563,9 +557,7 @@ const calculateMonthlySalaryBreakdown = (
   });
 
   const adminAmount =
-    adminCharges?.enable &&
-    employeeData.assignedUser?.PFAccountNumber 
-    
+    adminCharges?.enable && employeeData.assignedUser?.PFAccountNumber
       ? Math.min(roundToOneDecimal(finalPfBaseAmount * 0.01), 150)
       : 0;
   const updatedEmployeeContributions = Object.entries(
@@ -585,7 +577,7 @@ const calculateMonthlySalaryBreakdown = (
 
     let finalValue = 0;
 
-    if (key === "EmployeePF" ) {
+    if (key === "EmployeePF") {
       if (employeeData.assignedUser?.PFAccountNumber) {
         if (Number(item.selectedOption) === 1800) {
           finalValue = Math.min((totalAmount + basicPayValue) * 0.12, 1800);
@@ -596,7 +588,7 @@ const calculateMonthlySalaryBreakdown = (
         finalValue = 0;
       }
     } else if (key === "EmployeeESI") {
-      if (employeeData.assignedUser?.ESIAccountNumber ) {
+      if (employeeData.assignedUser?.ESIAccountNumber) {
         finalValue =
           monthlyCTC <= ESI_THRESHOLD
             ? Math.min((totalAmount + basicPayValue) * 0.0075, 157.5)
@@ -673,7 +665,9 @@ const calculateMonthlySalaryBreakdown = (
     0
   );
   const netSalary =
-    totalEarnings + totalEmployer - (totalEmployee + totalDeductions+ totalEmployer);
+    totalEarnings +
+    totalEmployer -
+    (totalEmployee + totalDeductions + totalEmployer);
 
   return {
     id: salaryBreakdownData.id,
