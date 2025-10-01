@@ -232,8 +232,8 @@ module.exports = function registerEndpoint(router, { services }) {
           "employeeId",
           "assignedUser.first_name",
           "assignedUser.last_name",
-          "assignedDepartment.department_id.departmentName",
-          "assignedBranch.branch_id.branchName",
+          "department.departmentName",
+          "branch.branchName",
           "assignedUser.id",
           "approver.id",
         ],
@@ -291,9 +291,8 @@ module.exports = function registerEndpoint(router, { services }) {
         employeeDetailsMap[emp.id] = {
           employeeId: emp.employeeId,
           firstName: emp.assignedUser?.first_name || "Unknown",
-          department:
-            emp.assignedDepartment?.department_id?.departmentName || "Finance",
-          branch: emp.assignedBranch?.branch_id?.branchName || "Bangalore",
+          department: emp.department?.departmentName || "Finance",
+          branch: emp.branch?.branchName || "Bangalore",
           userId: emp?.assignedUser?.id,
         };
       });
@@ -431,8 +430,8 @@ module.exports = function registerEndpoint(router, { services }) {
           "employeeId",
           "assignedUser.first_name",
           "assignedUser.last_name",
-          "assignedDepartment.department_id.departmentName",
-          "assignedBranch.branch_id.branchName",
+          "department.departmentName",
+          "branch.branchName",
           "assignedUser.id",
           "approver.id",
         ],
@@ -492,9 +491,8 @@ module.exports = function registerEndpoint(router, { services }) {
         employeeDetailsMap[emp.id] = {
           employeeId: emp.employeeId,
           firstName: emp.assignedUser?.first_name || "Unknown",
-          department:
-            emp.assignedDepartment?.department_id?.departmentName || "Finance",
-          branch: emp.assignedBranch?.branch_id?.branchName || "Bangalore",
+          department: emp.department?.departmentName || "Finance",
+          branch: emp.branch?.branchName || "Bangalore",
           userId: emp.assignedUser?.id,
           approverId: emp.approver?.id,
         };
