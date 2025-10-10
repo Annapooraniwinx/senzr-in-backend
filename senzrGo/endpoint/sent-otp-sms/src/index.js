@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import fetch from "node-fetch";
 
 export default (router, { services }) => {
   const { ItemsService } = services;
@@ -10,7 +11,7 @@ export default (router, { services }) => {
 
       console.log("📩 [REQUEST] /send-otp", { phone, userApp });
 
-      if (!phone || userApp !== "fieldseasy") {
+      if (!phone || userApp !== "fieldeasy") {
         return res
           .status(400)
           .json({ error: "Missing phone or invalid userApp" });

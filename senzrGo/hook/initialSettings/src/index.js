@@ -1,31 +1,165 @@
-export default ({ filter, action, services, database }) => {
+import { v4 as uuidv4 } from "uuid";
+
+export default ({ action }, { services, database }) => {
   const { ItemsService } = services;
 
   action("items.create", async (meta, context) => {
     const { collection, payload, key } = meta;
-    const { accountability } = context;
+    const { accountability, schema } = context;
 
+    // Only run for tenant collection
     if (collection !== "tenant") return;
 
-    console.log("Tenant created! Starting additional setup...");
+    console.log("Heina Tenant created! Starting additional setup...");
 
     const tenantId = key;
     const employeeId = payload.employeeId;
-
     const errorService = new ItemsService("registration_errors", {
-      schema: context.schema,
+      schema,
       accountability,
     });
     const pendingCollections = [];
+    const createdResources = {
+      tenant: tenantId,
+      folders: [],
+      attendanceCycle: null,
+      shift: null,
+      personalModule: null,
+      salaryBreakdown: null,
+      configs: [],
+      leaves: null,
+    };
+
+    const cleanupResources = async (errorMessage) => {
+      console.log(
+        "Cleaning up resources (except tenant and personalModule)..."
+      );
+      try {
+        // Delete configs
+        for (const configId of createdResources.configs) {
+          try {
+            await new ItemsService("config", {
+              schema,
+              accountability,
+            }).deleteOne(configId);
+          } catch (err) {
+            console.error(`Error deleting config ${configId}:`, err);
+          }
+        }
+        // Delete salary breakdown
+        if (createdResources.salaryBreakdown) {
+          try {
+            await new ItemsService("SalaryBreakdown", {
+              schema,
+              accountability,
+            }).deleteOne(createdResources.salaryBreakdown);
+          } catch (err) {
+            console.error(
+              `Error deleting salary breakdown ${createdResources.salaryBreakdown}:`,
+              err
+            );
+          }
+        }
+        // Delete shift
+        if (createdResources.shift) {
+          try {
+            await new ItemsService("shifts", {
+              schema,
+              accountability,
+            }).deleteOne(createdResources.shift);
+          } catch (err) {
+            console.error(
+              `Error deleting shift ${createdResources.shift}:`,
+              err
+            );
+          }
+        }
+        // Delete attendance cycle
+        if (createdResources.attendanceCycle) {
+          try {
+            await new ItemsService("attendanceCycle", {
+              schema,
+              accountability,
+            }).deleteOne(createdResources.attendanceCycle);
+          } catch (err) {
+            console.error(
+              `Error deleting attendance cycle ${createdResources.attendanceCycle}:`,
+              err
+            );
+          }
+        }
+        // Delete leaves
+        if (createdResources.leaves) {
+          try {
+            await new ItemsService("leaves", {
+              schema,
+              accountability,
+            }).deleteOne(createdResources.leaves);
+          } catch (err) {
+            console.error(
+              `Error deleting leaves ${createdResources.leaves}:`,
+              err
+            );
+          }
+        }
+        // Delete folders in reverse order to handle parent-child dependencies
+        const foldersByParent = {};
+        for (const folder of createdResources.folders) {
+          foldersByParent[folder.parent] = (
+            foldersByParent[folder.parent] || []
+          ).concat(folder);
+        }
+        const deleteQueue = [];
+        const visited = new Set();
+        const collectFoldersToDelete = (folderId) => {
+          if (visited.has(folderId)) return;
+          visited.add(folderId);
+          const children = foldersByParent[folderId] || [];
+          for (const child of children) collectFoldersToDelete(child.id);
+          deleteQueue.push(folderId);
+        };
+        const mainFolder = createdResources.folders.find((f) => !f.parent);
+        if (mainFolder) collectFoldersToDelete(mainFolder.id);
+        for (let i = deleteQueue.length - 1; i >= 0; i--) {
+          try {
+            await database("directus_folders")
+              .where("id", deleteQueue[i])
+              .del();
+          } catch (err) {
+            console.error(`Error deleting folder ${deleteQueue[i]}:`, err);
+          }
+        }
+        await errorService.createOne({
+          tenantId,
+          employeeId,
+          failed_collection: "cleanup",
+          error_response: {
+            message: errorMessage,
+            stack: errorMessage.stack || new Error().stack,
+          },
+          pending_collections: pendingCollections,
+        });
+      } catch (cleanupErr) {
+        console.error("Error during cleanup:", cleanupErr);
+      }
+    };
 
     try {
-      // Create folder structure
-      const folderIds = [];
+      // === Folder Structure ===
+      const folders = [];
       try {
-        const mainFolder = await database("directus_folders")
-          .insert({ name: tenantId })
-          .returning("id");
-        folderIds.push(mainFolder[0].id);
+        const mainFolderId = uuidv4();
+        await database("directus_folders").insert({
+          id: mainFolderId,
+          name: tenantId,
+        });
+        folders.push({ id: mainFolderId, name: tenantId, parent: null });
+        createdResources.folders.push({
+          id: mainFolderId,
+          name: tenantId,
+          parent: null,
+        });
+
         const childFolders = [
           "Profiles",
           "Faces",
@@ -39,34 +173,71 @@ export default ({ filter, action, services, database }) => {
           "Workorders",
           "rfidCard",
         ];
+
+        const folderIds = {};
         for (const folderName of childFolders) {
-          const folder = await database("directus_folders")
-            .insert({ name: folderName, parent: mainFolder[0].id })
-            .returning("id");
-          folderIds.push(folder[0].id);
+          const folderId = uuidv4();
+          await database("directus_folders").insert({
+            id: folderId,
+            name: folderName,
+            parent: mainFolderId,
+          });
+          folderIds[folderName] = folderId;
+          folders.push({
+            id: folderId,
+            name: folderName,
+            parent: mainFolderId,
+          });
+          createdResources.folders.push({
+            id: folderId,
+            name: folderName,
+            parent: mainFolderId,
+          });
         }
+
         const importedFilesSubFolders = ["EmployeeDatas", "AttendanceRecords"];
         for (const subFolder of importedFilesSubFolders) {
-          const folder = await database("directus_folders")
-            .insert({
-              name: subFolder,
-              parent: folderIds[childFolders.indexOf("Imported Files") + 1],
-            })
-            .returning("id");
-          folderIds.push(folder[0].id);
+          const folderId = uuidv4();
+          await database("directus_folders").insert({
+            id: folderId,
+            name: subFolder,
+            parent: folderIds["Imported Files"],
+          });
+          folders.push({
+            id: folderId,
+            name: subFolder,
+            parent: folderIds["Imported Files"],
+          });
+          createdResources.folders.push({
+            id: folderId,
+            name: subFolder,
+            parent: folderIds["Imported Files"],
+          });
         }
+
         const documentsSubFolders = ["OnboardDocuments", "OffBoardDocuments"];
         for (const subFolder of documentsSubFolders) {
-          const folder = await database("directus_folders")
-            .insert({
-              name: subFolder,
-              parent: folderIds[childFolders.indexOf("Documents") + 1],
-            })
-            .returning("id");
-          folderIds.push(folder[0].id);
+          const folderId = uuidv4();
+          await database("directus_folders").insert({
+            id: folderId,
+            name: subFolder,
+            parent: folderIds["Documents"],
+          });
+          folders.push({
+            id: folderId,
+            name: subFolder,
+            parent: folderIds["Documents"],
+          });
+          createdResources.folders.push({
+            id: folderId,
+            name: subFolder,
+            parent: folderIds["Documents"],
+          });
         }
+
+        // Update tenant with folder structure
         await database("tenant")
-          .update({ foldersId: folderIds })
+          .update({ foldersId: JSON.stringify(folders) })
           .where("tenantId", tenantId);
       } catch (error) {
         console.error("Error creating folders:", error);
@@ -76,109 +247,24 @@ export default ({ filter, action, services, database }) => {
           failed_collection: "directus_folders",
           error_response: { message: error.message, stack: error.stack },
           pending_collections: [
-            "locationManagement",
-            "organization",
             "attendanceCycle",
             "shifts",
-            "personalModule",
-            "SalaryBreakdregistration_errorsown",
-            "config",
-          ],
-        });
-        return; // Stop further processing but don't delete
-      }
-
-      // Create location
-      let locationId = null;
-      try {
-        const locationService = new ItemsService("locationManagement", {
-          schema: context.schema,
-          accountability,
-        });
-        const locationPayload = {
-          status: "active",
-          locType: "branch",
-          locdetail: {
-            locationName: payload.tenantName,
-            address: payload.companyAddress || "N/A",
-            pincode: payload.companyAddress
-              ? payload.companyAddress.match(/\b\d{6}\b/)?.[0] || ""
-              : "",
-          },
-          tenant: tenantId,
-        };
-        const location = await locationService.createOne(locationPayload);
-        locationId = location.id;
-      } catch (error) {
-        console.error("Error creating location:", error);
-        await errorService.createOne({
-          tenantId,
-          employeeId,
-          failed_collection: "locationManagement",
-          error_response: { message: error.message, stack: error.stack },
-          pending_collections: [
-            "organization",
-            "attendanceCycle",
-            "shifts",
+            "leaves",
             "personalModule",
             "SalaryBreakdown",
             "config",
           ],
         });
+        await cleanupResources(error);
         return;
       }
-      pendingCollections.push("locationManagement");
-
-      // Create organization
-      let organizationId = null;
-      try {
-        const orgService = new ItemsService("organization", {
-          schema: context.schema,
-          accountability,
-        });
-        const orgPayload = {
-          orgName: payload.tenantName,
-          orgNumber: payload.mobileNumber ? `+91${payload.mobileNumber}` : null,
-          orgGst: payload.panOrGst || null,
-          orgType: "main tenant",
-          orgAddress: payload.companyAddress || "N/A",
-          tenant: tenantId,
-          orgLocation: locationId,
-        };
-        organizationId = (await orgService.createOne(orgPayload)).id;
-        if (locationId) {
-          const locationService = new ItemsService("locationManagement", {
-            schema: context.schema,
-            accountability,
-          });
-          await locationService.updateOne(locationId, {
-            orgLocation: organizationId,
-          });
-        }
-      } catch (error) {
-        console.error("Error creating organization:", error);
-        await errorService.createOne({
-          tenantId,
-          employeeId,
-          failed_collection: "organization",
-          error_response: { message: error.message, stack: error.stack },
-          pending_collections: [
-            "attendanceCycle",
-            "shifts",
-            "personalModule",
-            "SalaryBreakdown",
-            "config",
-          ],
-        });
-        return;
-      }
-      pendingCollections.push("organization");
+      pendingCollections.push("directus_folders");
 
       // Create attendance cycle
       let attendanceCycleId = null;
       try {
         const cycleService = new ItemsService("attendanceCycle", {
-          schema: context.schema,
+          schema,
           accountability,
         });
         const cyclePayload = {
@@ -205,7 +291,8 @@ export default ({ filter, action, services, database }) => {
             ],
           },
         };
-        attendanceCycleId = (await cycleService.createOne(cyclePayload)).id;
+        attendanceCycleId = await cycleService.createOne(cyclePayload);
+        createdResources.attendanceCycle = attendanceCycleId;
       } catch (error) {
         console.error("Error creating attendance cycle:", error);
         await errorService.createOne({
@@ -215,11 +302,13 @@ export default ({ filter, action, services, database }) => {
           error_response: { message: error.message, stack: error.stack },
           pending_collections: [
             "shifts",
+            "leaves",
             "personalModule",
             "SalaryBreakdown",
             "config",
           ],
         });
+        await cleanupResources(error);
         return;
       }
       pendingCollections.push("attendanceCycle");
@@ -228,7 +317,7 @@ export default ({ filter, action, services, database }) => {
       let shiftId = null;
       try {
         const shiftService = new ItemsService("shifts", {
-          schema: context.schema,
+          schema,
           accountability,
         });
         const shiftPayload = {
@@ -239,7 +328,8 @@ export default ({ filter, action, services, database }) => {
           status: "assigned",
           tenant: tenantId,
         };
-        shiftId = (await shiftService.createOne(shiftPayload)).id;
+        shiftId = await shiftService.createOne(shiftPayload);
+        createdResources.shift = shiftId;
       } catch (error) {
         console.error("Error creating shift:", error);
         await errorService.createOne({
@@ -247,16 +337,55 @@ export default ({ filter, action, services, database }) => {
           employeeId,
           failed_collection: "shifts",
           error_response: { message: error.message, stack: error.stack },
-          pending_collections: ["personalModule", "SalaryBreakdown", "config"],
+          pending_collections: [
+            "leaves",
+            "personalModule",
+            "SalaryBreakdown",
+            "config",
+          ],
         });
+        await cleanupResources(error);
         return;
       }
       pendingCollections.push("shifts");
 
-      // Create personal module
+      // Create leaves
+      let leavesId = null;
+      try {
+        const leavesService = new ItemsService("leaves", {
+          schema,
+          accountability,
+        });
+        const leavesPayload = {
+          leaveBalance: {},
+          CarryForwardleave: {},
+          leaveTaken: {},
+          monthLimit: {},
+          assignedLeave: [],
+          year: new Date().toISOString(),
+          uniqueId: `${tenantId}-${employeeId}`,
+          tenant: tenantId,
+        };
+        leavesId = await leavesService.createOne(leavesPayload);
+        createdResources.leaves = leavesId;
+      } catch (error) {
+        console.error("Error creating leaves:", error);
+        await errorService.createOne({
+          tenantId,
+          employeeId,
+          failed_collection: "leaves",
+          error_response: { message: error.message, stack: error.stack },
+          pending_collections: ["personalModule", "SalaryBreakdown", "config"],
+        });
+        await cleanupResources(error);
+        return;
+      }
+      pendingCollections.push("leaves");
+
+      // Create personal module with leaves reference
       try {
         const personalService = new ItemsService("personalModule", {
-          schema: context.schema,
+          schema,
           accountability,
         });
         const adminRole = await database("directus_roles")
@@ -294,11 +423,12 @@ export default ({ filter, action, services, database }) => {
             role: adminRoleId,
             tenant: tenantId,
             appAccess: true,
-            organization: organizationId,
             userApp: "fieldeasy",
           },
+          leaves: leavesId,
         };
-        await personalService.createOne(personalPayload);
+        const personalId = await personalService.createOne(personalPayload);
+        createdResources.personalModule = personalId;
       } catch (error) {
         console.error("Error creating personal module:", error);
         await errorService.createOne({
@@ -308,6 +438,7 @@ export default ({ filter, action, services, database }) => {
           error_response: { message: error.message, stack: error.stack },
           pending_collections: ["SalaryBreakdown", "config"],
         });
+        await cleanupResources(error);
         return;
       }
       pendingCollections.push("personalModule");
@@ -315,13 +446,14 @@ export default ({ filter, action, services, database }) => {
       // Create salary breakdown
       try {
         const salaryService = new ItemsService("SalaryBreakdown", {
-          schema: context.schema,
+          schema,
           accountability,
         });
-        await salaryService.createOne({
+        const salaryId = await salaryService.createOne({
           employee: employeeId,
           tenant: tenantId,
         });
+        createdResources.salaryBreakdown = salaryId;
       } catch (error) {
         console.error("Error creating salary breakdown:", error);
         await errorService.createOne({
@@ -331,6 +463,7 @@ export default ({ filter, action, services, database }) => {
           error_response: { message: error.message, stack: error.stack },
           pending_collections: ["config"],
         });
+        await cleanupResources(error);
         return;
       }
       pendingCollections.push("SalaryBreakdown");
@@ -345,15 +478,16 @@ export default ({ filter, action, services, database }) => {
       for (const template of defaultTemplates) {
         try {
           const configService = new ItemsService("config", {
-            schema: context.schema,
+            schema,
             accountability,
           });
-          await configService.createOne({
+          const configId = await configService.createOne({
             configName: template.name,
             tenant: tenantId,
             attendancePolicies: { locationCentric: false },
             salarySettings: { status: "draft" },
           });
+          createdResources.configs.push(configId);
         } catch (error) {
           console.error(`Error creating config ${template.name}:`, error);
           await errorService.createOne({
@@ -363,6 +497,7 @@ export default ({ filter, action, services, database }) => {
             error_response: { message: error.message, stack: error.stack },
             pending_collections: [],
           });
+          await cleanupResources(error);
           return;
         }
       }
@@ -378,6 +513,7 @@ export default ({ filter, action, services, database }) => {
         error_response: { message: error.message, stack: error.stack },
         pending_collections: pendingCollections,
       });
+      await cleanupResources(error);
     }
   });
 };

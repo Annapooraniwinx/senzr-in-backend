@@ -26,5 +26,8 @@
 	},
 	"devDependencies": {
 		"@directus/extensions-sdk": "16.0.2"
+	},
+	"dependencies": {
+		"uuid": "^13.0.0"
 	}
 }

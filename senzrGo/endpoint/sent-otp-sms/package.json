@@ -28,6 +28,7 @@
 		"@directus/extensions-sdk": "16.0.2"
 	},
 	"dependencies": {
-		"crypto": "^1.0.1"
+		"crypto": "^1.0.1",
+		"node-fetch": "^3.3.2"
 	}
 }
