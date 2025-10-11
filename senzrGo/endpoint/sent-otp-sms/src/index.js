@@ -55,29 +55,53 @@ export default (router, { services }) => {
       console.log("🔢 Generated OTP:", otpCode);
       console.log("🆔 Session UUID:", session_uuid);
 
-      // Step 3: Send OTP via MG91 SMS API
-      const senderId = "iwinfe"; // Replace with your MG91 sender ID
-      const message = `Your Fieldseasy OTP is ${otpCode}. Do not share it with anyone.`;
+      // Step 3: Prepare body for MSG91 Flow API ✅ (Correct format)
+      const smsBody = {
+        template_id: "68e9f1bb04a89d56bb105bd8",
+        short_url: "1",
+        realTimeResponse: "1",
+        recipients: [
+          {
+            mobiles: phone.replace("+", ""),
+            var1: otpCode,
+          },
+        ],
+      };
 
+      console.log("📤 [MSG91 REQUEST BODY]:", JSON.stringify(smsBody, null, 2));
+
+      // Step 4: Send OTP via MSG91 Flow API ✅
       const response = await fetch("https://api.msg91.com/api/v5/flow/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          authkey: "472414Ty8iVR5I68e7b6cfP1",
+          authkey: "472414ALslxcGmklr68ea0c2cP1",
+          accept: "application/json",
         },
-        body: JSON.stringify({
-          template_id: "YOUR_TEMPLATE_ID",
-          sender: senderId,
-          short_url: "1",
-          mobiles: phone,
-          VAR1: otpCode,
-        }),
+        body: JSON.stringify(smsBody),
       });
 
-      const smsResult = await response.json();
-      console.log("📨 SMS Sent:", smsResult);
+      console.log("📡 [MSG91 STATUS]:", response.status);
 
-      // Step 4: Save OTP + UUID in assignedUser
+      const smsResult = await response.json();
+      console.log("📨 [MSG91 RESPONSE]:", JSON.stringify(smsResult, null, 2));
+
+      // Step 5: Check for successful send
+      if (
+        !smsResult ||
+        smsResult.type === "error" ||
+        smsResult.status === "failure" ||
+        smsResult.message?.toLowerCase()?.includes("error")
+      ) {
+        console.error("❌ Failed to send OTP:", smsResult);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to send OTP. Please try again.",
+          msg91Response: smsResult,
+        });
+      }
+
+      // Step 6: Save OTP + UUID in assignedUser
       const payload = {
         assignedUser: {
           id: assignedUserId,
@@ -89,7 +113,7 @@ export default (router, { services }) => {
       await personalService.updateOne(personalModuleId, payload);
 
       return res.status(200).json({
-        message: "OTP sent successfully via MG91",
+        message: "OTP sent successfully via MSG91",
         otp_session_uuid: session_uuid,
       });
     } catch (err) {
