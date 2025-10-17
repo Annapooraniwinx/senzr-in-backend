@@ -57,7 +57,7 @@ export default (router, { services }) => {
 
       // Step 3: Prepare body for MSG91 Flow API ✅ (Correct format)
       const smsBody = {
-        template_id: "68e9f1bb04a89d56bb105bd8",
+        template_id: "68ef54f8352db42ab01fa2c5",
         short_url: "1",
         realTimeResponse: "1",
         recipients: [

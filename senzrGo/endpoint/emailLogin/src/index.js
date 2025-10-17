@@ -86,14 +86,14 @@ export default (router, { services }) => {
       const transporter = nodemailer.createTransport({
         service: "gmail",
         auth: {
-          user: "iwinxdigitaltechnologies@gmail.com",
-          pass: "uoav ukqz ycjq vskn",
+          user: "fieldopsbysenzr@gmail.com",
+          pass: "gokz sdtc zbnm dmep",
         },
       });
 
       // Step 6: Styled HTML email (Fieldseasy theme 💙)
       const mailOptions = {
-        from: '"Fieldseasy" <iwinxdigitaltechnologies@gmail.com>',
+        from: '"Fieldseasy" <fieldopsbysenzr@gmail.com>',
         to: email,
         subject: "Your Fieldseasy OTP Code",
         html: `
