@@ -1,7 +1,7 @@
 // routes/searchLocation.js
 import axios from "axios";
 
-const GOOGLE_API_KEY = "AIzaSyCwp-gBFBiutZVlE-a-84hHnA2XeMRGE1g";
+const GOOGLE_API_KEY = "AIzaSyAwpDlggo6hmUnaxPqzzS7ydmUhjKug11Y";
 
 export default (router) => {
   // 🔍 Step 1: Autocomplete Search
@@ -12,7 +12,7 @@ export default (router) => {
 
     try {
       const response = await axios.post(
-        "https://places.googleapis.com/v1/places:autocomplete",
+        "https://maps.googleapis.com/maps/api/place/autocomplete/json",
         {
           input: query,
           languageCode: "en",

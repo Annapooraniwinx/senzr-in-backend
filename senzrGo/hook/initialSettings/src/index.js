@@ -1,4 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
+import dotenv from "dotenv";
+dotenv.config();
 
 export default ({ action }, { services, database }) => {
   const { ItemsService } = services;
@@ -10,7 +12,7 @@ export default ({ action }, { services, database }) => {
     // Only run for tenant collection
     if (collection !== "tenant") return;
 
-    console.log("🏁 Heina Tenant created! Starting additional setup...");
+    console.log("🏁 Heina Jeson Tenant created! Starting additional setup...");
 
     const tenantId = key;
     let employeeId = null;
@@ -31,6 +33,30 @@ export default ({ action }, { services, database }) => {
       leaves: null,
       tenantTemplates: [],
     };
+
+    // === DYNAMIC AWS SDK LOADING (INSIDE ACTION) ===
+    let s3 = null;
+
+    // ✅ Load from .env (secure way)
+    const BUCKET = process.env.BUCKET;
+    const ACCESS_KEY = process.env.ACCESS_KEY;
+    const SECRET_KEY = process.env.SECRET_KEY;
+    const REGION = process.env.REGION;
+
+    try {
+      const AWS = await import("aws-sdk");
+      s3 = new AWS.S3({
+        accessKeyId: ACCESS_KEY,
+        secretAccessKey: SECRET_KEY,
+        region: REGION,
+      });
+      console.log("AWS SDK loaded successfully");
+    } catch (err) {
+      console.error(
+        "❌ Failed to load AWS SDK (S3 will be skipped):",
+        err.message
+      );
+    }
 
     const cleanupResources = async (errorMessage) => {
       console.log(
@@ -118,7 +144,7 @@ export default ({ action }, { services, database }) => {
             );
           }
         }
-        // Delete folders in reverse order to handle parent-child dependencies
+        // Delete folders in reverse order
         const foldersByParent = {};
         for (const folder of createdResources.folders) {
           foldersByParent[folder.parent] = (
@@ -160,7 +186,7 @@ export default ({ action }, { services, database }) => {
       }
     };
 
-    // Function to wait for personal module with modified retry logic
+    // Wait for personal module
     const waitForPersonalModule = async () => {
       try {
         const personalService = new ItemsService("personalModule", {
@@ -242,7 +268,7 @@ export default ({ action }, { services, database }) => {
         return;
       }
 
-      // === Folder Structure ===
+      // === FOLDER STRUCTURE ===
       const folders = [];
       try {
         const mainFolderId = uuidv4();
@@ -363,7 +389,61 @@ export default ({ action }, { services, database }) => {
       }
       pendingCollections.push("directus_folders");
 
-      // Create attendance cycle
+      // === S3: Create tenant folder + 8 JSON files ===
+      if (s3) {
+        try {
+          const tenantPrefix = `${tenantId}/`;
+
+          await s3
+            .putObject({
+              Bucket: BUCKET,
+              Key: tenantPrefix,
+              Body: "",
+              ContentType: "application/x-directory",
+            })
+            .promise();
+
+          const files = [
+            "employees.json",
+            "faces.json",
+            "fingerprints.json",
+            "rfid.json",
+            "doors.json",
+            "devices.json",
+            "access_levels.json",
+            "four_door_controller.json",
+          ];
+
+          for (const file of files) {
+            await s3
+              .putObject({
+                Bucket: BUCKET,
+                Key: tenantPrefix + file,
+                Body: "[]",
+                ContentType: "application/json",
+              })
+              .promise();
+          }
+
+          console.log(
+            `S3 tenant folder & 8 JSON files created for ${tenantId}`
+          );
+        } catch (s3Err) {
+          console.error("S3 Error (non-fatal):", s3Err);
+          await errorService.createOne({
+            tenantId,
+            employeeId: personalId || null,
+            failed_collection: "s3_device_config",
+            error_response: { message: s3Err.message, stack: s3Err.stack },
+            pending_collections: pendingCollections.slice(),
+          });
+          // Continue — S3 is optional
+        }
+      } else {
+        console.warn("AWS SDK not available — skipping S3 setup");
+      }
+
+      // === ATTENDANCE CYCLE ===
       let attendanceCycleId = null;
       try {
         const cycleService = new ItemsService("attendanceCycle", {
@@ -404,7 +484,7 @@ export default ({ action }, { services, database }) => {
           )} }`
         );
       } catch (error) {
-        console.error("❌ Error creating attendance cycle:", error);
+        console.error("Error creating attendance cycle:", error);
         await errorService.createOne({
           tenantId,
           employeeId: personalId || null,
@@ -423,7 +503,7 @@ export default ({ action }, { services, database }) => {
       }
       pendingCollections.push("attendanceCycle");
 
-      // Create shift
+      // === SHIFT ===
       let shiftId = null;
       try {
         const shiftService = new ItemsService("shifts", {
@@ -462,7 +542,7 @@ export default ({ action }, { services, database }) => {
       }
       pendingCollections.push("shifts");
 
-      // Create leaves
+      // === LEAVES ===
       let leavesId = null;
       try {
         const leavesService = new ItemsService("leave", {
@@ -498,7 +578,7 @@ export default ({ action }, { services, database }) => {
       }
       pendingCollections.push("leave");
 
-      // Patch personal module with additional fields
+      // === PATCH PERSONAL MODULE ===
       try {
         const personalService = new ItemsService("personalModule", {
           schema,
@@ -544,7 +624,7 @@ export default ({ action }, { services, database }) => {
         return;
       }
 
-      // Create salary breakdown
+      // === SALARY BREAKDOWN ===
       try {
         const salaryService = new ItemsService("SalaryBreakdown", {
           schema,
@@ -612,7 +692,7 @@ export default ({ action }, { services, database }) => {
       }
       pendingCollections.push("config");
 
-      // Fetch available form templates and create copies in tenant_template
+      // === TENANT TEMPLATES ===
       try {
         const formTemplateService = new ItemsService("form_template", {
           schema,
@@ -645,7 +725,6 @@ export default ({ action }, { services, database }) => {
             `📄 Created tenant_template: { id: ${tenantTemplateId}, formName: ${template.formName}, tenant: ${tenantId} }`
           );
         }
-
         console.log(
           `✅ Created ${createdResources.tenantTemplates.length} tenant templates`
         );

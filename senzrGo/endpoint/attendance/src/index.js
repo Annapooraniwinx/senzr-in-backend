@@ -1,547 +1,87 @@
 module.exports = function registerEndpoint(router, { services }) {
   const { ItemsService } = services;
 
-  const ALL_TYPES = {
-    present: 0,
-    absent: 0,
-    weekOff: 0,
-    holiday: 0,
-    workFromHome: 0,
-    onDuty: 0,
-    holidayPresent: 0,
-    weekoffPresent: 0,
-
-    halfDay: 0,
-    paidLeave: 0,
-    unpaidLeave: 0,
-
-    earlyLeavingCount: 0,
-    earlyLeavingAllowed: 0,
-    earlyLeaving: 0,
-    earlyLeavingData: {},
-    totalEarlyDuration: "00:00:00",
-
-    lateEntryCount: 0,
-    lateComingAllowed: 0,
-    lateComing: 0,
-    lateData: {},
-    totalLateDuration: "00:00:00",
-
-    workingHoursCount: 0,
-    workingHoursAllowed: 0,
-    workingHours: 0,
-    workingHoursData: {},
-
-    workingDayOT: 0,
-    workingDayOTHours: "00:00:00",
-    weekOffOT: 0,
-    weekOffOTHours: "00:00:00",
-    holidayOT: 0,
-    holidayOTHours: "00:00:00",
-    workFromHomeOT: 0,
-    workFromHomeOTHours: "00:00:00",
-
-    totalPayableDays: 0,
-  };
-
-  router.get("/attendance-verification", async (req, res) => {
-    const filter = req.query.filter || {};
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 500;
-    const offset = (page - 1) * limit;
-
-    try {
-      const betweenDates = filter._and?.[0]?.date?._between;
-      const employeeIdFilter = filter._and?.[1]?.employeeId;
-      const tenantIdFilter = filter._and?.[2]?.tenant?.tenantId?._eq;
-
-      if (!betweenDates || betweenDates.length !== 2) {
-        return res.status(400).json({ error: "Invalid date range" });
-      }
-
-      if (!tenantIdFilter) {
-        return res.status(400).json({ error: "Tenant ID required" });
-      }
-
-      let employeeIds = [];
-      if (employeeIdFilter?._eq) {
-        employeeIds = [employeeIdFilter._eq];
-      } else if (employeeIdFilter?._in) {
-        employeeIds =
-          typeof employeeIdFilter._in === "string"
-            ? employeeIdFilter._in.split(",").map((id) => id.trim())
-            : employeeIdFilter._in;
-      }
-
-      if (!employeeIds.length) {
-        return res.status(400).json({ error: "Employee IDs required" });
-      }
-
-      let totalEmployees = employeeIds.length;
-      const paginatedEmployeeIds = employeeIds.slice(offset, offset + limit);
-
-      try {
-        const attendanceCycleService = new ItemsService("attendanceCycle", {
-          schema: req.schema,
-          accountability: req.accountability,
-        });
-
-        const cycleSettings = await attendanceCycleService.readByQuery({
-          filter: { tenant: { tenantId: { _eq: tenantIdFilter } } },
-          fields: ["multi_attendance_cycle"],
-          limit: 1,
-        });
-
-        if (!cycleSettings?.length) {
-          return res.status(400).json({ error: "No cycle settings found" });
-        }
-
-        const cycles = cycleSettings[0].multi_attendance_cycle?.cycles || [];
-
-        const attendanceService = new ItemsService("attendance", {
-          schema: req.schema,
-          accountability: req.accountability,
-        });
-
-        const records = await attendanceService.readByQuery({
-          filter: {
-            _and: [
-              { date: { _between: betweenDates } },
-              { employeeId: { _in: paginatedEmployeeIds } },
-              { tenant: { tenantId: { _eq: tenantIdFilter } } },
-            ],
-          },
-          fields: [
-            "employeeId",
-            "attendance",
-            "day",
-            "earlyDeparture",
-            "lateBy",
-            "overTime",
-            "workHours",
-          ],
-          limit: -1,
-        });
-
-        const personalModuleService = new ItemsService("personalModule", {
-          schema: req.schema,
-          accountability: req.accountability,
-        });
-
-        const personalModuleData = await personalModuleService.readByQuery({
-          filter: { id: { _in: paginatedEmployeeIds } },
-          fields: [
-            "id",
-            "employeeId",
-            "cycleType",
-            "config.attendancePolicies",
-            "config.attendancePolicies.LateCommingDayMode",
-            "config.attendancePolicies.earlyExitAllowed",
-            "config.attendancePolicies.earlyLeavingDayMode",
-            "config.attendancePolicies.earlyLeavingType",
-            "config.attendancePolicies.entryTimeLimit",
-            "config.attendancePolicies.exitTimeLimit",
-            "config.attendancePolicies.isOverTime",
-            "config.attendancePolicies.isWorkingHours",
-            "config.attendancePolicies.lateComingType",
-            "config.attendancePolicies.lateEntryAllowed",
-            "config.attendancePolicies.lateEntryPenaltyAmt",
-            "config.attendancePolicies.locationCentric",
-            "config.attendancePolicies.setEntryTimeLimit",
-            "config.attendancePolicies.setExitTimeLimit",
-            "config.attendancePolicies.setMinWorkingHours",
-            "config.attendancePolicies.setOverTimeLimit",
-            "config.attendancePolicies.workingHoursType",
-            "config.attendancePolicies.workinghrsDaysLimit",
-            "config.attendancePolicies.wrkHoursDayMode",
-            "config.attendancePolicies.lateCommingLeave",
-            "config.attendancePolicies.earlyLeavingLeave",
-            "config.attendancePolicies.wrkHoursLeave",
-            "config.attendancePolicies.weekOffType",
-            "config.attendancePolicies.publicHolidayType",
-            "config.attendancePolicies.extraHoursType",
-            "config.attendanceSettings",
-            "leaves.leaveBalance",
-          ],
-          sort: ["-date_updated"],
-          limit: -1,
-        });
-
-        const personalModuleMap = Object.fromEntries(
-          personalModuleData.map((p) => [p.id, p])
-        );
-
-        const result = {};
-        paginatedEmployeeIds.forEach((empId) => {
-          const employeeLeaveBalance =
-            personalModuleMap[empId]?.leaves?.leaveBalance || {};
-          result[empId] = {
-            employeeId: empId,
-            ...structuredClone(ALL_TYPES),
-            leaveBalance: employeeLeaveBalance,
-          };
-        });
-
-        records.forEach((record) => {
-          const empData = result[record.employeeId];
-          if (!empData) return;
-
-          if (record.attendance && empData.hasOwnProperty(record.attendance)) {
-            empData[record.attendance] += 1;
-          }
-
-          let payableDay =
-            record.day && !isNaN(record.day) ? parseFloat(record.day) : 0;
-
-          const empCycleType = personalModuleMap[record.employeeId]?.cycleType;
-          let includeWeekoffs = false;
-          let includeHolidays = false;
-
-          if (empCycleType) {
-            const assignedCycle = cycles.find(
-              (c) => String(c.cycleId) === String(empCycleType)
-            );
-
-            if (assignedCycle) {
-              includeWeekoffs = assignedCycle.includeWeekends;
-              includeHolidays = assignedCycle.includeHolidays;
-            }
-          }
-
-          if (includeWeekoffs && record.attendance === "weekOff") {
-            payableDay = 1;
-          } else if (includeHolidays && record.attendance === "holiday") {
-            payableDay = 1;
-          }
-
-          empData.totalPayableDays += payableDay;
-
-          const earlyExitAllowed =
-            personalModuleMap[record.employeeId]?.config?.attendancePolicies
-              ?.earlyExitAllowed;
-          empData.earlyLeavingAllowed = earlyExitAllowed;
-          const lateComingAllowed =
-            personalModuleMap[record.employeeId]?.config?.attendancePolicies
-              ?.lateEntryAllowed;
-          empData.lateComingAllowed = lateComingAllowed;
-          const workingHoursAllowed =
-            personalModuleMap[record.employeeId]?.config?.attendancePolicies
-              ?.workinghrsDaysLimit;
-          empData.workingHoursAllowed = workingHoursAllowed;
-
-          // Early Leaving Logic
-          if (
-            record.earlyDeparture !== "00:00:00" &&
-            record.earlyDeparture >
-              personalModuleMap[record.employeeId]?.config?.attendancePolicies
-                ?.setExitTimeLimit
-          ) {
-            empData.earlyLeavingCount += 1;
-
-            const earlyLeavingType =
-              personalModuleMap[record.employeeId]?.config?.attendancePolicies
-                ?.earlyLeavingType;
-            const dayMode =
-              personalModuleMap[record.employeeId]?.config?.attendancePolicies
-                ?.earlyLeavingDayMode;
-            const leaveType =
-              personalModuleMap[record.employeeId]?.config?.attendancePolicies
-                ?.earlyLeavingLeave;
-
-            const exceededCount = empData.earlyLeavingCount - earlyExitAllowed;
-            if (exceededCount <= 0) return;
-
-            if (earlyLeavingType === "lop") {
-              empData.earlyLeavingData = {
-                mode: dayMode,
-                leave: earlyLeavingType,
-              };
-              if (dayMode === "quarterDay") {
-                empData.earlyLeaving += 0.25;
-                empData.totalPayableDays -= 0.25;
-              } else if (dayMode === "halfDay") {
-                empData.earlyLeaving += 0.5;
-                empData.totalPayableDays -= 0.5;
-              } else {
-                empData.earlyLeaving += 1;
-                empData.totalPayableDays -= 1;
-              }
-            } else if (earlyLeavingType === "leave") {
-              const [h, m, s] = record.earlyDeparture.split(":").map(Number);
-              const totalHours = h + m / 60 + s / 3600;
-
-              empData.earlyLeavingData = { leave: leaveType };
-
-              if (totalHours <= 2) {
-                empData.earlyLeaving += 0.25;
-                empData.earlyLeavingData.mode = "Quarter Day";
-              } else if (totalHours <= 4) {
-                empData.earlyLeaving += 0.5;
-                empData.earlyLeavingData.mode = "Half Day";
-              } else if (totalHours <= 6) {
-                empData.earlyLeaving += 0.75;
-                empData.earlyLeavingData.mode = "0.75 Day";
-              } else {
-                empData.earlyLeaving += 1;
-                empData.earlyLeavingData.mode = "Full Day";
-              }
-            } else if (earlyLeavingType === "fixed") {
-              empData.earlyLeaving += 1;
-
-              empData.totalEarlyDuration = addTime(
-                empData.totalEarlyDuration || "00:00:00",
-                record.earlyDeparture
-              );
-              empData.earlyLeavingData = {
-                mode: "fixed",
-                leave: empData.totalEarlyDuration,
-              };
-            }
-          }
-
-          // Late Coming Logic
-          if (
-            record.lateBy !== "00:00:00" &&
-            record.lateBy >
-              personalModuleMap[record.employeeId]?.config?.attendancePolicies
-                ?.setEntryTimeLimit
-          ) {
-            empData.lateEntryCount += 1;
-
-            const lateComingType =
-              personalModuleMap[record.employeeId]?.config?.attendancePolicies
-                ?.lateComingType;
-            const dayMode =
-              personalModuleMap[record.employeeId]?.config?.attendancePolicies
-                ?.LateCommingDayMode;
-            const leaveType =
-              personalModuleMap[record.employeeId]?.config?.attendancePolicies
-                ?.lateCommingLeave;
-
-            const exceededCount = empData.lateEntryCount - lateComingAllowed;
-            if (exceededCount <= 0) return;
-
-            if (lateComingType === "lop") {
-              empData.lateData = { mode: dayMode, leave: lateComingType };
-              if (dayMode === "quarter") {
-                empData.lateComing += 0.25;
-                empData.totalPayableDays -= 0.25;
-              } else if (dayMode === "half") {
-                empData.lateComing += 0.5;
-                empData.totalPayableDays -= 0.5;
-              } else {
-                empData.lateComing += 1;
-                empData.totalPayableDays -= 1;
-              }
-            } else if (lateComingType === "leave") {
-              const [h, m, s] = record.lateBy.split(":").map(Number);
-              const totalHours = h + m / 60 + s / 3600;
-
-              empData.lateData = { leave: leaveType };
-
-              if (totalHours <= 2) {
-                empData.lateComing += 0.25;
-                empData.lateData.mode = "Quarter Day";
-              } else if (totalHours <= 4) {
-                empData.lateComing += 0.5;
-                empData.lateData.mode = "Half Day";
-              } else if (totalHours <= 6) {
-                empData.lateComing += 0.75;
-                empData.lateData.mode = "0.75 Day";
-              } else {
-                empData.lateComing += 1;
-                empData.lateData.mode = "Full Day";
-              }
-            } else if (lateComingType === "fixed") {
-              empData.lateComing += 1;
-              empData.totalLateDuration = addTime(
-                empData.totalLateDuration || "00:00:00",
-                record.lateBy
-              );
-              empData.lateData = {
-                mode: "fixed",
-                leave: empData.totalLateDuration,
-              };
-            }
-          }
-
-          // Working Hours Logic
-          if (
-            record.workHours <
-            personalModuleMap[record.employeeId]?.config?.attendancePolicies
-              ?.setMinWorkingHours
-          ) {
-            empData.workingHoursCount += 1;
-
-            const workingHoursType =
-              personalModuleMap[record.employeeId]?.config?.attendancePolicies
-                ?.workingHoursType;
-            const dayMode =
-              personalModuleMap[record.employeeId]?.config?.attendancePolicies
-                ?.wrkHoursDayMode;
-            const leaveType =
-              personalModuleMap[record.employeeId]?.config?.attendancePolicies
-                ?.wrkHoursLeave;
-
-            const exceededCount =
-              empData.workingHoursCount - workingHoursAllowed;
-            if (exceededCount <= 0) return;
-
-            if (workingHoursType === "lop") {
-              empData.workingHoursData = {
-                mode: dayMode,
-                leave: workingHoursType,
-              };
-              if (dayMode === "quarterDay") {
-                empData.workingHours += 0.25;
-                empData.totalPayableDays -= 0.25;
-              } else if (dayMode === "halfDay") {
-                empData.workingHours += 0.5;
-                empData.totalPayableDays -= 0.5;
-              } else {
-                empData.workingHours += 1;
-                empData.totalPayableDays -= 1;
-              }
-            } else if (workingHoursType === "leave") {
-              empData.workingHoursData = { mode: dayMode, leave: leaveType };
-              if (dayMode === "quarterDay") {
-                empData.workingHours += 0.25;
-              } else if (dayMode === "halfDay") {
-                empData.workingHours += 0.5;
-              } else {
-                empData.workingHours += 1;
-              }
-            } else {
-              empData.workingHoursData = {
-                mode: "fixed",
-                leave: "fixedAMount",
-              };
-              empData.workingHours += 1;
-            }
-          }
-
-          const fullDayTime = addTime(
-            record.workHours || "00:00:00",
-            record.overTime || "00:00:00"
-          );
-
-          switch (record.attendance) {
-            case "present":
-              if (record.overTime && record.overTime !== "00:00:00") {
-                empData.workingDayOT += 1;
-                empData.workingDayOTHours = addTime(
-                  empData.workingDayOTHours || "00:00:00",
-                  fullDayTime
-                );
-              }
-              break;
-            case "paidLeave":
-              empData.paidLeave += 1;
-              break;
-            case "unPaidLeave":
-              empData.unpaidLeave += 1;
-              break;
-            case "weekOff":
-            case "weekoffPresent":
-              empData.weekOffOT += 1;
-              empData.weekOffOTHours = addTime(
-                empData.weekOffOTHours || "00:00:00",
-                fullDayTime
-              );
-              break;
-            case "holiday":
-            case "holidayPresent":
-              empData.holidayOT += 1;
-              empData.holidayOTHours = addTime(
-                empData.holidayOTHours || "00:00:00",
-                fullDayTime
-              );
-              break;
-            case "workFromHome":
-              empData.workFromHomeOT += 1;
-              empData.workFromHomeOTHours = addTime(
-                empData.workFromHomeOTHours || "00:00:00",
-                fullDayTime
-              );
-              break;
-          }
-        });
-
-        const resultArray = Object.values(result);
-
-        return res.json({
-          data: resultArray,
-          meta: {
-            total: totalEmployees,
-            page: page,
-            limit: limit,
-            totalPages: Math.ceil(totalEmployees / limit),
-          },
-        });
-      } catch (serviceError) {
-        return res.status(500).json({
-          error: "Service error",
-          message: serviceError.message,
-        });
-      }
-    } catch (err) {
-      return res.status(500).json({
-        error: "Internal server error",
-        message: err.message,
-        stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
-      });
-    }
-  });
-
-  //attendance dashboard
+  // Attendance dashboard
   router.get("/monthly-dashboard", async (req, res) => {
     try {
+      console.log("🚀 Starting /monthly-dashboard route");
+
+      // Filter parsing
       let filter = {};
+      console.log("🔍 Parsing filter...");
       if (req.query.filter) {
         if (typeof req.query.filter === "string") {
           try {
             filter = JSON.parse(req.query.filter);
+            console.log(
+              "✅ Filter parsed from string:",
+              JSON.stringify(filter)
+            );
           } catch (e) {
             console.error("❌ Failed to parse filter JSON", e);
           }
         } else if (typeof req.query.filter === "object") {
           filter = req.query.filter;
+          console.log("✅ Filter received as object:", JSON.stringify(filter));
         }
       }
 
+      // Tenant ID extraction
       let tenantId = req.query.tenantId;
+      console.log("🔍 Extracting tenantId...");
       if (!tenantId) {
         const filterAnd = filter._and || [];
         tenantId = filterAnd.find((f) => f.tenant)?.tenant?.tenantId?._eq;
+        console.log("🔍 TenantId from filter:", tenantId);
       }
+      console.log("✅ Final tenantId:", tenantId);
 
+      // Year extraction
       let year = req.query.year ? parseInt(req.query.year) : null;
+      console.log("🔍 Extracting year...");
       if (!year) {
         const filterAnd = filter._and || [];
         year = filterAnd.find((f) => f["year(date)"])?.["year(date)"]?._eq;
+        console.log("🔍 Year from filter:", year);
       }
+      console.log("✅ Final year:", year);
 
+      // Month extraction
       let month = req.query.month ? parseInt(req.query.month) : null;
+      console.log("🔍 Extracting month...");
       if (!month) {
         const filterAnd = filter._and || [];
         month = filterAnd.find((f) => f["month(date)"])?.["month(date)"]?._eq;
+        console.log("🔍 Month from filter:", month);
       }
+      console.log("✅ Final month:", month);
 
+      // Start date extraction
       let startDate = req.query.startDate;
+      console.log("🔍 Extracting startDate...");
       if (!startDate) {
         const filterAnd = filter._and || [];
         startDate = filterAnd.find((f) => f.date?._gte)?.date?._gte;
+        console.log("🔍 StartDate from filter:", startDate);
       }
+      console.log("✅ Final startDate:", startDate);
 
+      // End date extraction
       let endDate = req.query.endDate;
+      console.log("🔍 Extracting endDate...");
       if (!endDate) {
         const filterAnd = filter._and || [];
         endDate = filterAnd.find((f) => f.date?._lte)?.date?._lte;
+        console.log("🔍 EndDate from filter:", endDate);
       }
+      console.log("✅ Final endDate:", endDate);
 
+      // Employee IDs extraction
       let employeeIds = [];
+      console.log("🔍 Extracting employeeIds...");
       if (req.query.employeeId) {
         employeeIds = req.query.employeeId.split(",").map((id) => id.trim());
+        console.log("🔍 EmployeeIds from query:", employeeIds);
       } else {
         const filterAnd = filter._and || [];
         const employeeFilter = filterAnd.find((f) => f.employeeId);
@@ -549,16 +89,19 @@ module.exports = function registerEndpoint(router, { services }) {
           employeeIds = employeeFilter.employeeId.id._in
             .split(",")
             .map((id) => id.trim());
+          console.log("🔍 EmployeeIds from filter _in:", employeeIds);
         } else if (employeeFilter?.employeeId?.id?._eq) {
           employeeIds = [employeeFilter.employeeId.id._eq];
+          console.log("🔍 EmployeeIds from filter _eq:", employeeIds);
         }
       }
+      console.log("✅ Final employeeIds:", employeeIds);
 
+      // Other query parameters
       const organizationId = req.query.organizationId;
       const branchLocationId = req.query.branchLocationId;
       const departmentId = req.query.departmentId;
-      const cycleTypeFilter = req.query.cycleTypeFilter; // Note: Changed from cycleTypeId to match query parameter
-
+      const cycleTypeFilter = req.query.cycleTypeFilter;
       const searchTerm = req.query.search || "";
       const page = Number.parseInt(req.query.page) || 1;
       const limit = Number.parseInt(req.query.limit) || 50;
@@ -580,44 +123,58 @@ module.exports = function registerEndpoint(router, { services }) {
       console.log("💠 limit:", limit);
       console.log("💠 full filter object:", JSON.stringify(filter, null, 2));
 
+      // Validate tenantId
+      console.log("🔍 Validating tenantId...");
       if (!tenantId) {
+        console.log("❌ tenantId missing, returning error");
         return res.status(400).json({
           error: "Missing required parameter",
           message: "tenantId is required",
         });
       }
+      console.log("✅ tenantId validated");
 
+      // Initialize services
+      console.log("🔍 Initializing services...");
       const attendanceCycleService = new ItemsService("attendanceCycle", {
         schema: req.schema,
         accountability: req.accountability,
       });
-
       const attendanceService = new ItemsService("attendance", {
         schema: req.schema,
         accountability: req.accountability,
       });
-
       const personalModuleService = new ItemsService("personalModule", {
         schema: req.schema,
         accountability: req.accountability,
       });
+      console.log("✅ Services initialized");
 
+      // Fetch cycle settings
+      console.log("🔍 Fetching cycle settings...");
       const cycleSettings = await attendanceCycleService.readByQuery({
         filter: { tenant: { tenantId: { _eq: tenantId } } },
         fields: ["multi_attendance_cycle"],
         limit: 1,
       });
+      console.log(
+        "✅ Cycle settings fetched:",
+        JSON.stringify(cycleSettings, null, 2)
+      );
 
       const cycles = cycleSettings[0]?.multi_attendance_cycle?.cycles || [];
       console.log("💠 Fetched cycles:", JSON.stringify(cycles, null, 2));
 
+      // Handle no cycles case
+      console.log("🔍 Checking cycles...");
       if (!cycles.length) {
-        console.warn(
-          "💠 No cycles found, using default 1st-to-last day for current month"
-        );
+        console.warn("💠 No cycles found, using default cycle");
         const now = new Date();
         const currentYear = now.getFullYear();
         const currentMonth = now.getMonth() + 1;
+        console.log(
+          "🔍 Calling getCurrentMonthAllEmployees with default cycle..."
+        );
         return await getCurrentMonthAllEmployees(
           req,
           res,
@@ -647,13 +204,21 @@ module.exports = function registerEndpoint(router, { services }) {
           null
         );
       }
+      console.log("✅ Cycles found, proceeding...");
 
       let isSingleEmployee = employeeIds.length === 1;
       let employeeId = isSingleEmployee ? employeeIds[0] : null;
+      console.log(
+        "🔍 Employee check: isSingleEmployee =",
+        isSingleEmployee,
+        "employeeId =",
+        employeeId
+      );
 
       if (employeeIds.length === 0) {
-        // All employees cases
+        console.log("🔍 No employeeIds, handling all employees...");
         if (startDate && endDate) {
+          console.log("🔍 Calling getDateRangeAllEmployees...");
           return await getDateRangeAllEmployees(
             req,
             res,
@@ -674,6 +239,7 @@ module.exports = function registerEndpoint(router, { services }) {
             null
           );
         } else {
+          console.log("🔍 Calling getCurrentMonthAllEmployees...");
           return await getCurrentMonthAllEmployees(
             req,
             res,
@@ -693,9 +259,10 @@ module.exports = function registerEndpoint(router, { services }) {
           );
         }
       } else if (isSingleEmployee) {
-        // Single employee cases
-        // Fetch employee's cycleType from personalModule
+        console.log("🔍 Handling single employee...");
+        // Fetch employee's cycleType
         let employeeCycleType = cycleTypeFilter;
+        console.log("🔍 Fetching employee cycleType...");
         if (!employeeCycleType) {
           const employeeData = await personalModuleService.readByQuery({
             filter: {
@@ -707,10 +274,14 @@ module.exports = function registerEndpoint(router, { services }) {
             fields: ["cycleType"],
             limit: 1,
           });
+          console.log(
+            "✅ Employee data fetched:",
+            JSON.stringify(employeeData, null, 2)
+          );
           employeeCycleType = employeeData[0]?.cycleType;
           console.log("💠 Fetched employee cycleType:", employeeCycleType);
           if (!employeeCycleType) {
-            console.warn("💠 No cycleType found for employeeId:", employeeId);
+            console.warn("❌ No cycleType found for employeeId:", employeeId);
             return res.status(400).json({
               error: "Invalid employee data",
               message: "No cycleType found for the specified employee",
@@ -719,6 +290,7 @@ module.exports = function registerEndpoint(router, { services }) {
         }
 
         if (year && month) {
+          console.log("🔍 Calling getMonthlyDetailedAttendance...");
           return await getMonthlyDetailedAttendance(
             req,
             res,
@@ -731,6 +303,7 @@ module.exports = function registerEndpoint(router, { services }) {
             employeeCycleType
           );
         } else if (year) {
+          console.log("🔍 Calling getYearlySummary...");
           return await getYearlySummary(
             req,
             res,
@@ -742,6 +315,7 @@ module.exports = function registerEndpoint(router, { services }) {
             employeeCycleType
           );
         } else if (startDate && endDate) {
+          console.log("🔍 Calling getDateRangeDetailedForEmployee...");
           return await getDateRangeDetailedForEmployee(
             req,
             res,
@@ -754,7 +328,7 @@ module.exports = function registerEndpoint(router, { services }) {
             employeeCycleType
           );
         } else {
-          // Default to current month detailed for single
+          console.log("🔍 Defaulting to current month for single employee...");
           const now = new Date();
           const currentYear = now.getFullYear();
           const currentMonth = now.getMonth() + 1;
@@ -765,6 +339,12 @@ module.exports = function registerEndpoint(router, { services }) {
               cycles,
               employeeCycleType
             );
+          console.log(
+            "🔍 Calculated date range: start =",
+            calcStart,
+            "end =",
+            calcEnd
+          );
           return await getDateRangeDetailedForEmployee(
             req,
             res,
@@ -778,8 +358,9 @@ module.exports = function registerEndpoint(router, { services }) {
           );
         }
       } else {
-        // Multiple employees
+        console.log("🔍 Handling multiple employees...");
         if (year && month) {
+          console.log("🔍 Calculating date range for multiple employees...");
           const { startDate: calcStart, endDate: calcEnd } =
             calculateDateRangeFromCycles(
               Number.parseInt(year),
@@ -787,6 +368,13 @@ module.exports = function registerEndpoint(router, { services }) {
               cycles,
               cycleTypeFilter
             );
+          console.log(
+            "🔍 Calculated date range: start =",
+            calcStart,
+            "end =",
+            calcEnd
+          );
+          console.log("🔍 Calling getDateRangeAllEmployees...");
           return await getDateRangeAllEmployees(
             req,
             res,
@@ -794,7 +382,7 @@ module.exports = function registerEndpoint(router, { services }) {
             personalModuleService,
             tenantId,
             calcStart,
-            calcEnd,
+            endDate,
             organizationId,
             branchLocationId,
             departmentId,
@@ -807,11 +395,13 @@ module.exports = function registerEndpoint(router, { services }) {
             employeeIds
           );
         } else if (year) {
+          console.log("❌ Yearly summary not supported for multiple employees");
           return res.status(400).json({
             error: "Unsupported",
             message: "Yearly summary only supported for single employee",
           });
         } else if (startDate && endDate) {
+          console.log("🔍 Calling getDateRangeAllEmployees...");
           return await getDateRangeAllEmployees(
             req,
             res,
@@ -832,7 +422,9 @@ module.exports = function registerEndpoint(router, { services }) {
             employeeIds
           );
         } else {
-          // Current month for multiple
+          console.log(
+            "🔍 Calling getCurrentMonthAllEmployees for multiple employees..."
+          );
           return await getCurrentMonthAllEmployees(
             req,
             res,
@@ -880,28 +472,47 @@ module.exports = function registerEndpoint(router, { services }) {
     employeeIds = null
   ) {
     try {
+      console.log("🚀 Entered getCurrentMonthAllEmployees");
+      console.log("🔍 Input parameters:", {
+        tenantId,
+        organizationId,
+        branchLocationId,
+        departmentId,
+        cycleTypeFilter,
+        searchTerm,
+        page,
+        limit,
+        offset,
+        cyclesLength: cycles.length,
+        employeeIds,
+      });
+
       const now = new Date();
       const currentYear = now.getFullYear();
       const currentMonth = now.getMonth() + 1;
+      console.log("🔍 Current date info:", { currentYear, currentMonth });
 
       // Parse cycleTypeFilter if it's in JSON format
       let cycleTypeValue = cycleTypeFilter;
+      console.log("🔍 Parsing cycleTypeFilter...");
       if (typeof cycleTypeFilter === "string") {
         try {
           const parsedFilter = JSON.parse(cycleTypeFilter);
           if (parsedFilter.cycleType && parsedFilter.cycleType._contains) {
             cycleTypeValue = parsedFilter.cycleType._contains;
+            console.log("✅ Parsed cycleTypeValue from JSON:", cycleTypeValue);
           }
         } catch (e) {
-          // If JSON parsing fails, assume cycleTypeFilter is a direct value
           console.warn(
             "💠 Failed to parse cycleTypeFilter JSON, using raw value:",
             cycleTypeFilter
           );
         }
       }
+      console.log("✅ Final cycleTypeValue:", cycleTypeValue);
 
       // Find the matching cycle from multi_attendance_cycle
+      console.log("🔍 Finding matching cycle...");
       let selectedCycle = cycles.find(
         (cycle) => cycle.cycleId == cycleTypeValue
       );
@@ -919,14 +530,19 @@ module.exports = function registerEndpoint(router, { services }) {
           selectedCycle
         );
       }
+      console.log("✅ Selected cycle:", selectedCycle);
 
+      console.log("🔍 Calculating date range...");
       const { startDate, endDate } = calculateDateRangeFromCycles(
         currentYear,
         currentMonth,
         [selectedCycle],
         cycleTypeValue
       );
+      console.log("💠 Calculated date range:", { startDate, endDate });
 
+      // Build personalModuleFilter
+      console.log("🔍 Building personalModuleFilter...");
       const personalModuleFilter = {
         _and: [
           {
@@ -941,34 +557,33 @@ module.exports = function registerEndpoint(router, { services }) {
         personalModuleFilter._and.push({
           assignedUser: { organization: { id: { _eq: organizationId } } },
         });
+        console.log("🔍 Added organizationId filter:", organizationId);
       }
 
       if (branchLocationId) {
         personalModuleFilter._and.push({
           branchLocation: { id: { _eq: branchLocationId } },
         });
+        console.log("🔍 Added branchLocationId filter:", branchLocationId);
       }
 
       if (departmentId) {
         personalModuleFilter._and.push({
           department: { id: { _eq: departmentId } },
         });
+        console.log("🔍 Added departmentId filter:", departmentId);
       }
 
-      // Apply cycleType filter strictly, excluding null values
       if (cycleTypeValue) {
         personalModuleFilter._and.push({
           cycleType: { _eq: cycleTypeValue },
         });
-        // Explicitly exclude null cycleType values
-        personalModuleFilter._and.push({
-          cycleType: { _nnull: true },
-        });
+        console.log("🔍 Added cycleType filter:", cycleTypeValue);
       } else {
-        // If no cycleTypeFilter is provided, exclude null cycleType values to avoid invalid data
         personalModuleFilter._and.push({
           cycleType: { _nnull: true },
         });
+        console.log("🔍 Added cycleType _nnull filter");
       }
 
       if (searchTerm) {
@@ -979,27 +594,38 @@ module.exports = function registerEndpoint(router, { services }) {
             { assignedUser: { last_name: { _icontains: searchTerm } } },
           ],
         });
+        console.log("🔍 Added searchTerm filter:", searchTerm);
       }
 
       if (employeeIds) {
         personalModuleFilter._and.push({
           id: { _in: employeeIds },
         });
+        console.log("🔍 Added employeeIds filter:", employeeIds);
       }
 
       console.log(
-        "🔍 personalModuleFilter:",
+        "🔍 Final personalModuleFilter:",
         JSON.stringify(personalModuleFilter, null, 2)
       );
 
+      // Fetch total employees
+      console.log("🔍 Fetching totalEmployeesResult...");
       const totalEmployeesResult = await personalModuleService.readByQuery({
         filter: personalModuleFilter,
         fields: ["id"],
         limit: -1,
       });
+      console.log(
+        "✅ totalEmployeesResult fetched, length:",
+        totalEmployeesResult.length
+      );
 
       const totalEmployees = totalEmployeesResult.length;
+      console.log("✅ totalEmployees:", totalEmployees);
 
+      // Fetch paginated employees
+      console.log("🔍 Fetching paginatedEmployees...");
       const paginatedEmployees = await personalModuleService.readByQuery({
         filter: personalModuleFilter,
         fields: [
@@ -1016,10 +642,20 @@ module.exports = function registerEndpoint(router, { services }) {
         limit: limit,
         offset: offset,
       });
+      console.log(
+        "✅ paginatedEmployees fetched, length:",
+        paginatedEmployees.length
+      );
+      console.log(
+        "🔍 paginatedEmployees data:",
+        JSON.stringify(paginatedEmployees, null, 2)
+      );
 
       const employeeIdsFetched = paginatedEmployees.map((emp) => emp.id);
+      console.log("✅ employeeIdsFetched:", employeeIdsFetched);
 
       if (employeeIdsFetched.length === 0) {
+        console.log("🔍 No employees fetched, returning empty response");
         return res.json({
           data: [],
           meta: {
@@ -1038,6 +674,8 @@ module.exports = function registerEndpoint(router, { services }) {
         });
       }
 
+      // Fetch attendance records
+      console.log("🔍 Fetching attendance records...");
       const records = await attendanceService.readByQuery({
         filter: {
           _and: [
@@ -1061,9 +699,19 @@ module.exports = function registerEndpoint(router, { services }) {
         sort: ["date"],
         limit: -1,
       });
+      console.log("✅ Attendance records fetched, length:", records.length);
+      console.log(
+        "🔍 Attendance records data:",
+        JSON.stringify(records, null, 2)
+      );
 
+      console.log("🔍 Building employeeDetailsMap...");
       const employeeDetailsMap = {};
-      paginatedEmployees.forEach((emp) => {
+      paginatedEmployees.forEach((emp, index) => {
+        console.log(
+          `🔍 Processing employee ${index + 1}/${paginatedEmployees.length}:`,
+          emp.id
+        );
         employeeDetailsMap[emp.id] = {
           employeeId: emp.employeeId,
           firstName: emp.assignedUser?.first_name || "Unknown",
@@ -1073,38 +721,59 @@ module.exports = function registerEndpoint(router, { services }) {
           cycleType: emp?.cycleType,
         };
       });
+      console.log(
+        "✅ employeeDetailsMap created:",
+        Object.keys(employeeDetailsMap).length,
+        "entries"
+      );
 
+      console.log("🔍 Building employeeRecords...");
       const employeeRecords = {};
-
-      records.forEach((record) => {
+      records.forEach((record, index) => {
         const empId = record.employeeId?.id;
-        if (!empId) return;
-
+        if (!empId) {
+          console.warn("💠 Skipping record with missing empId:", record);
+          return;
+        }
+        console.log(
+          `🔍 Processing record ${index + 1}/${records.length} for empId:`,
+          empId
+        );
         if (!employeeRecords[empId]) {
           employeeRecords[empId] = [];
         }
-
         employeeRecords[empId].push(record);
       });
+      console.log(
+        "✅ employeeRecords created:",
+        Object.keys(employeeRecords).length,
+        "employees"
+      );
 
+      console.log("🔍 Generating employeeSummaries...");
       const employeeSummaries = [];
-
       for (const empId of employeeIdsFetched) {
+        console.log("🔍 Processing summary for empId:", empId);
         const empDetails = employeeDetailsMap[empId];
-        if (!empDetails) continue;
+        if (!empDetails) {
+          console.warn("💠 Skipping empId with no details:", empId);
+          continue;
+        }
 
         const empRecords = employeeRecords[empId] || [];
+        console.log("🔍 Calculating attendance summary for empId:", empId);
         const summary = calculateAttendanceSummaryWithCycles(
           empRecords,
           cycles,
           empDetails.cycleType
         );
+        console.log("✅ Summary calculated for empId:", empId, summary);
 
         const leaveTypes = empRecords
           .filter((record) => record.leaveType)
           .map((record) => record.leaveType);
-
         const leaveType = leaveTypes.length > 0 ? leaveTypes[0] : "none";
+        console.log("🔍 LeaveType for empId:", empId, leaveType);
 
         employeeSummaries.push({
           employeeId: empId,
@@ -1120,9 +789,15 @@ module.exports = function registerEndpoint(router, { services }) {
           leaveType: leaveType,
           ...summary,
         });
+        console.log("✅ Added to employeeSummaries for empId:", empId);
       }
+      console.log(
+        "✅ employeeSummaries created, length:",
+        employeeSummaries.length
+      );
 
-      return res.json({
+      console.log("🔍 Preparing final response...");
+      const response = {
         data: employeeSummaries,
         meta: {
           tenantId,
@@ -1137,7 +812,12 @@ module.exports = function registerEndpoint(router, { services }) {
           totalPages: Math.ceil(totalEmployees / limit),
           search: searchTerm,
         },
-      });
+      };
+      console.log(
+        "✅ Final response prepared:",
+        JSON.stringify(response.meta, null, 2)
+      );
+      return res.json(response);
     } catch (error) {
       console.error("❌ Error in getCurrentMonthAllEmployees:", error);
       throw error;
@@ -1164,13 +844,32 @@ module.exports = function registerEndpoint(router, { services }) {
     employeeIds = null
   ) {
     try {
+      console.log("🚀 Entered getDateRangeAllEmployees");
+      console.log("🔍 Input parameters:", {
+        tenantId,
+        startDate,
+        endDate,
+        organizationId,
+        branchLocationId,
+        departmentId,
+        cycleTypeFilter,
+        searchTerm,
+        page,
+        limit,
+        offset,
+        cyclesLength: cycles.length,
+        employeeIds,
+      });
+
       // Parse cycleTypeFilter if it's in JSON format
       let cycleTypeValue = cycleTypeFilter;
+      console.log("🔍 Parsing cycleTypeFilter...");
       if (typeof cycleTypeFilter === "string") {
         try {
           const parsedFilter = JSON.parse(cycleTypeFilter);
           if (parsedFilter.cycleType && parsedFilter.cycleType._contains) {
             cycleTypeValue = parsedFilter.cycleType._contains;
+            console.log("✅ Parsed cycleTypeValue from JSON:", cycleTypeValue);
           }
         } catch (e) {
           console.warn(
@@ -1179,7 +878,10 @@ module.exports = function registerEndpoint(router, { services }) {
           );
         }
       }
+      console.log("✅ Final cycleTypeValue:", cycleTypeValue);
 
+      // Build personalModuleFilter
+      console.log("🔍 Building personalModuleFilter...");
       const personalModuleFilter = {
         _and: [
           {
@@ -1194,32 +896,33 @@ module.exports = function registerEndpoint(router, { services }) {
         personalModuleFilter._and.push({
           assignedUser: { organization: { id: { _eq: organizationId } } },
         });
+        console.log("🔍 Added organizationId filter:", organizationId);
       }
 
       if (branchLocationId) {
         personalModuleFilter._and.push({
           branchLocation: { id: { _eq: branchLocationId } },
         });
+        console.log("🔍 Added branchLocationId filter:", branchLocationId);
       }
 
       if (departmentId) {
         personalModuleFilter._and.push({
           department: { id: { _eq: departmentId } },
         });
+        console.log("🔍 Added departmentId filter:", departmentId);
       }
 
-      // Apply cycleType filter strictly, excluding null values
       if (cycleTypeValue) {
         personalModuleFilter._and.push({
           cycleType: { _eq: cycleTypeValue },
         });
-        personalModuleFilter._and.push({
-          cycleType: { _nnull: true },
-        });
+        console.log("🔍 Added cycleType filter:", cycleTypeValue);
       } else {
         personalModuleFilter._and.push({
           cycleType: { _nnull: true },
         });
+        console.log("🔍 Added cycleType _nnull filter");
       }
 
       if (searchTerm) {
@@ -1230,27 +933,38 @@ module.exports = function registerEndpoint(router, { services }) {
             { assignedUser: { last_name: { _icontains: searchTerm } } },
           ],
         });
+        console.log("🔍 Added searchTerm filter:", searchTerm);
       }
 
       if (employeeIds) {
         personalModuleFilter._and.push({
           id: { _in: employeeIds },
         });
+        console.log("🔍 Added employeeIds filter:", employeeIds);
       }
 
       console.log(
-        "🔍 personalModuleFilter:",
+        "🔍 Final personalModuleFilter:",
         JSON.stringify(personalModuleFilter, null, 2)
       );
 
+      // Fetch total employees
+      console.log("🔍 Fetching totalEmployeesResult...");
       const totalEmployeesResult = await personalModuleService.readByQuery({
         filter: personalModuleFilter,
         fields: ["id"],
         limit: -1,
       });
+      console.log(
+        "✅ totalEmployeesResult fetched, length:",
+        totalEmployeesResult.length
+      );
 
       const totalEmployees = totalEmployeesResult.length;
+      console.log("✅ totalEmployees:", totalEmployees);
 
+      // Fetch paginated employees
+      console.log("🔍 Fetching paginatedEmployees...");
       const paginatedEmployees = await personalModuleService.readByQuery({
         filter: personalModuleFilter,
         fields: [
@@ -1264,10 +978,20 @@ module.exports = function registerEndpoint(router, { services }) {
         limit: limit,
         offset: offset,
       });
+      console.log(
+        "✅ paginatedEmployees fetched, length:",
+        paginatedEmployees.length
+      );
+      console.log(
+        "🔍 paginatedEmployees data:",
+        JSON.stringify(paginatedEmployees, null, 2)
+      );
 
       const employeeIdsFetched = paginatedEmployees.map((emp) => emp.id);
+      console.log("✅ employeeIdsFetched:", employeeIdsFetched);
 
       if (employeeIdsFetched.length === 0) {
+        console.log("🔍 No employees fetched, returning empty response");
         return res.json({
           data: [],
           meta: {
@@ -1287,6 +1011,8 @@ module.exports = function registerEndpoint(router, { services }) {
         });
       }
 
+      // Fetch attendance records
+      console.log("🔍 Fetching attendance records...");
       const records = await attendanceService.readByQuery({
         filter: {
           _and: [
@@ -1310,9 +1036,19 @@ module.exports = function registerEndpoint(router, { services }) {
         sort: ["date"],
         limit: -1,
       });
+      console.log("✅ Attendance records fetched, length:", records.length);
+      console.log(
+        "🔍 Attendance records data:",
+        JSON.stringify(records, null, 2)
+      );
 
+      console.log("🔍 Building employeeDetailsMap...");
       const employeeDetailsMap = {};
-      paginatedEmployees.forEach((emp) => {
+      paginatedEmployees.forEach((emp, index) => {
+        console.log(
+          `🔍 Processing employee ${index + 1}/${paginatedEmployees.length}:`,
+          emp.id
+        );
         employeeDetailsMap[emp.id] = {
           employeeId: emp.employeeId,
           firstName: emp.assignedUser?.first_name || "Unknown",
@@ -1320,38 +1056,59 @@ module.exports = function registerEndpoint(router, { services }) {
           cycleType: emp?.cycleType,
         };
       });
+      console.log(
+        "✅ employeeDetailsMap created:",
+        Object.keys(employeeDetailsMap).length,
+        "entries"
+      );
 
+      console.log("🔍 Building employeeRecords...");
       const employeeRecords = {};
-
-      records.forEach((record) => {
+      records.forEach((record, index) => {
         const empId = record.employeeId?.id;
-        if (!empId) return;
-
+        if (!empId) {
+          console.warn("💠 Skipping record with missing empId:", record);
+          return;
+        }
+        console.log(
+          `🔍 Processing record ${index + 1}/${records.length} for empId:`,
+          empId
+        );
         if (!employeeRecords[empId]) {
           employeeRecords[empId] = [];
         }
-
         employeeRecords[empId].push(record);
       });
+      console.log(
+        "✅ employeeRecords created:",
+        Object.keys(employeeRecords).length,
+        "employees"
+      );
 
+      console.log("🔍 Generating employeeSummaries...");
       const employeeSummaries = [];
-
       for (const empId of employeeIdsFetched) {
+        console.log("🔍 Processing summary for empId:", empId);
         const empDetails = employeeDetailsMap[empId];
-        if (!empDetails) continue;
+        if (!empDetails) {
+          console.warn("💠 Skipping empId with no details:", empId);
+          continue;
+        }
 
         const empRecords = employeeRecords[empId] || [];
+        console.log("🔍 Calculating attendance summary for empId:", empId);
         const summary = calculateAttendanceSummaryWithCycles(
           empRecords,
           cycles,
           empDetails.cycleType
         );
+        console.log("✅ Summary calculated for empId:", empId, summary);
 
         const leaveTypes = empRecords
           .filter((record) => record.leaveType)
           .map((record) => record.leaveType);
-
         const leaveType = leaveTypes.length > 0 ? leaveTypes[0] : "none";
+        console.log("🔍 LeaveType for empId:", empId, leaveType);
 
         employeeSummaries.push({
           employeeId: empId,
@@ -1362,12 +1119,17 @@ module.exports = function registerEndpoint(router, { services }) {
           leaveType: leaveType,
           ...summary,
         });
+        console.log("✅ Added to employeeSummaries for empId:", empId);
       }
+      console.log(
+        "✅ employeeSummaries created, length:",
+        employeeSummaries.length
+      );
 
+      console.log("🔍 Preparing final response...");
       const startDateObj = new Date(startDate);
       const endDateObj = new Date(endDate);
-
-      return res.json({
+      const response = {
         data: employeeSummaries,
         meta: {
           tenantId,
@@ -1383,7 +1145,12 @@ module.exports = function registerEndpoint(router, { services }) {
           totalPages: Math.ceil(totalEmployees / limit),
           search: searchTerm,
         },
-      });
+      };
+      console.log(
+        "✅ Final response prepared:",
+        JSON.stringify(response.meta, null, 2)
+      );
+      return res.json(response);
     } catch (error) {
       console.error("❌ Error in getDateRangeAllEmployees:", error);
       throw error;
@@ -1402,9 +1169,21 @@ module.exports = function registerEndpoint(router, { services }) {
     cycleType
   ) {
     try {
+      console.log("🚀 Entered getDateRangeDetailedForEmployee");
+      console.log("🔍 Input parameters:", {
+        employeeId,
+        tenantId,
+        startDate,
+        endDate,
+        cycleType,
+        cyclesLength: cycles.length,
+      });
+
       let lockedMonthAttendance = false;
+      console.log("🔍 Checking payroll verification...");
       if (tenantId && employeeId) {
         try {
+          console.log("🔍 Initializing payrollVerificationService...");
           const payrollVerificationService = new ItemsService(
             "payrollVerification",
             {
@@ -1412,7 +1191,9 @@ module.exports = function registerEndpoint(router, { services }) {
               accountability: req.accountability,
             }
           );
+          console.log("✅ payrollVerificationService initialized");
 
+          console.log("🔍 Fetching payroll verification records...");
           const payrollVerificationRecords =
             await payrollVerificationService.readByQuery({
               filter: {
@@ -1423,6 +1204,14 @@ module.exports = function registerEndpoint(router, { services }) {
               },
               fields: ["id", "employee", "salaryPaid", "startDate", "endDate"],
             });
+          console.log(
+            "✅ Payroll verification records fetched, length:",
+            payrollVerificationRecords.length
+          );
+          console.log(
+            "🔍 Payroll records:",
+            JSON.stringify(payrollVerificationRecords, null, 2)
+          );
 
           if (
             payrollVerificationRecords &&
@@ -1431,7 +1220,6 @@ module.exports = function registerEndpoint(router, { services }) {
             const payrollRecord = payrollVerificationRecords.find(
               (record) => record.salaryPaid === "paid"
             );
-
             if (payrollRecord) {
               lockedMonthAttendance = true;
               console.log(
@@ -1459,13 +1247,11 @@ module.exports = function registerEndpoint(router, { services }) {
       } else {
         console.log(
           "💠 Missing required parameters for payroll verification query:",
-          {
-            tenantId,
-            employeeId,
-          }
+          { tenantId, employeeId }
         );
       }
 
+      console.log("🔍 Fetching attendance records...");
       const records = await attendanceService.readByQuery({
         filter: {
           _and: [
@@ -1496,14 +1282,27 @@ module.exports = function registerEndpoint(router, { services }) {
         sort: ["date"],
         limit: -1,
       });
+      console.log("✅ Attendance records fetched, length:", records.length);
+      console.log(
+        "🔍 Attendance records data:",
+        JSON.stringify(records, null, 2)
+      );
 
+      console.log("🔍 Generating all dates in range...");
       const allDates = getAllDatesInRange(startDate, endDate);
+      console.log("✅ All dates generated, length:", allDates.length);
 
-      const dailyAttendance = allDates.map((date) => {
+      console.log("🔍 Building dailyAttendance...");
+      const dailyAttendance = allDates.map((date, index) => {
         const dateStr = date.toISOString().split("T")[0];
+        console.log(
+          `🔍 Processing date ${index + 1}/${allDates.length}:`,
+          dateStr
+        );
         const record = records.find((r) => r.date === dateStr);
 
         if (record) {
+          console.log("🔍 Found record for date:", dateStr);
           return {
             id: record.id,
             date: dateStr,
@@ -1524,6 +1323,7 @@ module.exports = function registerEndpoint(router, { services }) {
             mode: record.mode,
           };
         } else {
+          console.log("🔍 No record found for date:", dateStr);
           return {
             id: null,
             date: dateStr,
@@ -1545,23 +1345,29 @@ module.exports = function registerEndpoint(router, { services }) {
           };
         }
       });
+      console.log(
+        "✅ dailyAttendance created, length:",
+        dailyAttendance.length
+      );
 
+      console.log("🔍 Calculating monthly summary...");
       const monthlySummary = calculateAttendanceSummaryWithCycles(
         records,
         cycles,
         cycleType
       );
+      console.log("✅ Monthly summary calculated:", monthlySummary);
 
       const leaveTypes = records
         .filter((record) => record.leaveType)
         .map((record) => record.leaveType);
-
       const leaveType = leaveTypes.length > 0 ? leaveTypes[0] : "none";
+      console.log("🔍 LeaveType:", leaveType);
 
+      console.log("🔍 Preparing final response...");
       const startDateObj = new Date(startDate);
       const endDateObj = new Date(endDate);
-
-      return res.json({
+      const response = {
         data: {
           summary: {
             startDate,
@@ -1584,7 +1390,12 @@ module.exports = function registerEndpoint(router, { services }) {
           totalDays: dailyAttendance.length,
           lockedMonthAttendance,
         },
-      });
+      };
+      console.log(
+        "✅ Final response prepared:",
+        JSON.stringify(response.meta, null, 2)
+      );
+      return res.json(response);
     } catch (error) {
       console.error("❌ Error in getDateRangeDetailedForEmployee:", error);
       throw error;
@@ -1602,16 +1413,29 @@ module.exports = function registerEndpoint(router, { services }) {
     cycleType
   ) {
     try {
+      console.log("🚀 Entered getYearlySummary");
+      console.log("🔍 Input parameters:", {
+        employeeId,
+        tenantId,
+        year,
+        cycleType,
+        cyclesLength: cycles.length,
+      });
+
+      console.log("🔍 Initializing monthlySummaries...");
       const monthlySummaries = [];
 
       for (let month = 1; month <= 12; month++) {
+        console.log(`🔍 Processing month ${month}/12...`);
         const { startDate, endDate } = calculateDateRangeFromCycles(
           year,
           month,
           cycles,
           cycleType
         );
+        console.log("🔍 Date range for month:", { month, startDate, endDate });
 
+        console.log("🔍 Fetching attendance records for month:", month);
         const records = await attendanceService.readByQuery({
           filter: {
             _and: [
@@ -1634,17 +1458,31 @@ module.exports = function registerEndpoint(router, { services }) {
           sort: ["date"],
           limit: -1,
         });
+        console.log(
+          `✅ Attendance records fetched for month ${month}, length:`,
+          records.length
+        );
+        console.log(
+          "🔍 Attendance records data:",
+          JSON.stringify(records, null, 2)
+        );
 
+        console.log(`🔍 Calculating summary for month ${month}...`);
         const monthlySummary = calculateAttendanceSummaryWithCycles(
           records,
           cycles,
           cycleType
         );
+        console.log(
+          `✅ Monthly summary calculated for month ${month}:`,
+          monthlySummary
+        );
+
         const leaveTypes = records
           .filter((record) => record.leaveType)
           .map((record) => record.leaveType);
-
         const leaveType = leaveTypes.length > 0 ? leaveTypes[0] : "none";
+        console.log(`🔍 LeaveType for month ${month}:`, leaveType);
 
         monthlySummaries.push({
           month,
@@ -1656,9 +1494,15 @@ module.exports = function registerEndpoint(router, { services }) {
           leaveType: leaveType,
           ...monthlySummary,
         });
+        console.log(`✅ Added summary for month ${month} to monthlySummaries`);
       }
+      console.log(
+        "✅ monthlySummaries created, length:",
+        monthlySummaries.length
+      );
 
-      return res.json({
+      console.log("🔍 Preparing final response...");
+      const response = {
         data: monthlySummaries,
         meta: {
           employeeId,
@@ -1667,7 +1511,12 @@ module.exports = function registerEndpoint(router, { services }) {
           cycleType: cycleType || "Multi Attendance Cycle",
           totalMonths: monthlySummaries.length,
         },
-      });
+      };
+      console.log(
+        "✅ Final response prepared:",
+        JSON.stringify(response.meta, null, 2)
+      );
+      return res.json(response);
     } catch (error) {
       console.error("❌ Error in getYearlySummary:", error);
       throw error;
@@ -1686,16 +1535,30 @@ module.exports = function registerEndpoint(router, { services }) {
     cycleType
   ) {
     try {
+      console.log("🚀 Entered getMonthlyDetailedAttendance");
+      console.log("🔍 Input parameters:", {
+        employeeId,
+        tenantId,
+        year,
+        month,
+        cycleType,
+        cyclesLength: cycles.length,
+      });
+
+      console.log("🔍 Calculating date range...");
       const { startDate, endDate } = calculateDateRangeFromCycles(
         year,
         month,
         cycles,
         cycleType
       );
+      console.log("✅ Date range calculated:", { startDate, endDate });
 
       let lockedMonthAttendance = false;
+      console.log("🔍 Checking payroll verification...");
       if (tenantId && employeeId && month && year) {
         try {
+          console.log("🔍 Initializing payrollVerificationService...");
           const payrollVerificationService = new ItemsService(
             "payrollVerification",
             {
@@ -1703,7 +1566,9 @@ module.exports = function registerEndpoint(router, { services }) {
               accountability: req.accountability,
             }
           );
+          console.log("✅ payrollVerificationService initialized");
 
+          console.log("🔍 Fetching payroll verification records...");
           const payrollVerificationRecords =
             await payrollVerificationService.readByQuery({
               filter: {
@@ -1713,6 +1578,14 @@ module.exports = function registerEndpoint(router, { services }) {
               },
               fields: ["id", "employee", "salaryPaid", "startDate", "endDate"],
             });
+          console.log(
+            "✅ Payroll verification records fetched, length:",
+            payrollVerificationRecords.length
+          );
+          console.log(
+            "🔍 Payroll records:",
+            JSON.stringify(payrollVerificationRecords, null, 2)
+          );
 
           if (
             payrollVerificationRecords &&
@@ -1721,7 +1594,6 @@ module.exports = function registerEndpoint(router, { services }) {
             const payrollRecord = payrollVerificationRecords.find(
               (record) => record.salaryPaid === "paid"
             );
-
             if (payrollRecord) {
               lockedMonthAttendance = true;
               console.log(
@@ -1749,15 +1621,11 @@ module.exports = function registerEndpoint(router, { services }) {
       } else {
         console.log(
           "💠 Missing required parameters for payroll verification query:",
-          {
-            tenantId,
-            employeeId,
-            month,
-            year,
-          }
+          { tenantId, employeeId, month, year }
         );
       }
 
+      console.log("🔍 Fetching attendance records...");
       const records = await attendanceService.readByQuery({
         filter: {
           _and: [
@@ -1788,14 +1656,27 @@ module.exports = function registerEndpoint(router, { services }) {
         sort: ["date"],
         limit: -1,
       });
+      console.log("✅ Attendance records fetched, length:", records.length);
+      console.log(
+        "🔍 Attendance records data:",
+        JSON.stringify(records, null, 2)
+      );
 
+      console.log("🔍 Generating all dates in range...");
       const allDates = getAllDatesInRange(startDate, endDate);
+      console.log("✅ All dates generated, length:", allDates.length);
 
-      const dailyAttendance = allDates.map((date) => {
+      console.log("🔍 Building dailyAttendance...");
+      const dailyAttendance = allDates.map((date, index) => {
         const dateStr = date.toISOString().split("T")[0];
+        console.log(
+          `🔍 Processing date ${index + 1}/${allDates.length}:`,
+          dateStr
+        );
         const record = records.find((r) => r.date === dateStr);
 
         if (record) {
+          console.log("🔍 Found record for date:", dateStr);
           return {
             id: record.id,
             date: dateStr,
@@ -1816,6 +1697,7 @@ module.exports = function registerEndpoint(router, { services }) {
             mode: record.mode,
           };
         } else {
+          console.log("🔍 No record found for date:", dateStr);
           return {
             id: null,
             date: dateStr,
@@ -1837,20 +1719,27 @@ module.exports = function registerEndpoint(router, { services }) {
           };
         }
       });
+      console.log(
+        "✅ dailyAttendance created, length:",
+        dailyAttendance.length
+      );
 
+      console.log("🔍 Calculating monthly summary...");
       const monthlySummary = calculateAttendanceSummaryWithCycles(
         records,
         cycles,
         cycleType
       );
+      console.log("✅ Monthly summary calculated:", monthlySummary);
 
       const leaveTypes = records
         .filter((record) => record.leaveType)
         .map((record) => record.leaveType);
-
       const leaveType = leaveTypes.length > 0 ? leaveTypes[0] : "none";
+      console.log("🔍 LeaveType:", leaveType);
 
-      return res.json({
+      console.log("🔍 Preparing final response...");
+      const response = {
         data: {
           summary: {
             month,
@@ -1873,7 +1762,12 @@ module.exports = function registerEndpoint(router, { services }) {
           totalDays: dailyAttendance.length,
           lockedMonthAttendance,
         },
-      });
+      };
+      console.log(
+        "✅ Final response prepared:",
+        JSON.stringify(response.meta, null, 2)
+      );
+      return res.json(response);
     } catch (error) {
       console.error("❌ Error in getMonthlyDetailedAttendance:", error);
       throw error;
@@ -1881,18 +1775,30 @@ module.exports = function registerEndpoint(router, { services }) {
   }
 
   function calculateDateRangeFromCycles(year, month, cycles, cycleType = null) {
+    console.log("🚀 Entered calculateDateRangeFromCycles");
+    console.log("🔍 Input parameters:", {
+      year,
+      month,
+      cycleType,
+      cyclesLength: cycles.length,
+    });
+
     let selectedCycle = cycles[0]; // Default to first cycle
+    console.log("🔍 Defaulting to first cycle:", selectedCycle);
 
     if (cycleType) {
+      console.log("🔍 Searching for cycle matching cycleType:", cycleType);
       const foundCycle = cycles.find((cycle) => cycle.cycleId == cycleType);
       if (foundCycle) {
         selectedCycle = foundCycle;
+        console.log("✅ Found matching cycle:", selectedCycle);
       } else {
         console.warn("💠 No matching cycle found for cycleType:", cycleType);
       }
     }
 
     let { startDate: cycleStartDay, endDate: cycleEndDay } = selectedCycle;
+    console.log("🔍 Cycle dates:", { cycleStartDay, cycleEndDay });
 
     cycleStartDay = parseInt(cycleStartDay);
     if (isNaN(cycleStartDay) || cycleStartDay < 1 || cycleStartDay > 31) {
@@ -1902,6 +1808,7 @@ module.exports = function registerEndpoint(router, { services }) {
       );
       cycleStartDay = 1;
     }
+    console.log("✅ Parsed cycleStartDay:", cycleStartDay);
 
     let endDay;
     if (
@@ -1909,6 +1816,7 @@ module.exports = function registerEndpoint(router, { services }) {
       cycleEndDay.toLowerCase().includes("end")
     ) {
       endDay = new Date(year, month, 0).getDate();
+      console.log("🔍 Using end of month for endDay:", endDay);
     } else {
       endDay = parseInt(cycleEndDay);
       if (isNaN(endDay) || endDay < 1 || endDay > 31) {
@@ -1918,6 +1826,7 @@ module.exports = function registerEndpoint(router, { services }) {
         );
         endDay = new Date(year, month, 0).getDate();
       }
+      console.log("✅ Parsed endDay:", endDay);
     }
 
     let startYear = year;
@@ -1925,30 +1834,36 @@ module.exports = function registerEndpoint(router, { services }) {
     if (startMonth === 0) {
       startMonth = 12;
       startYear -= 1;
+      console.log("🔍 Adjusted start date to previous year:", {
+        startYear,
+        startMonth,
+      });
     }
 
     if (cycleStartDay === 1) {
       startMonth = month;
       startYear = year;
+      console.log("🔍 Using same month for start date:", {
+        startYear,
+        startMonth,
+      });
     }
 
     const startDate = new Date(startYear, startMonth - 1, cycleStartDay);
     const endDate = new Date(year, month - 1, endDay);
+    console.log("🔍 Calculated dates:", { startDate, endDate });
 
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
       console.error("❌ Invalid date calculated:", { startDate, endDate });
       throw new Error("Invalid date values in cycle calculation");
     }
 
-    console.log("💠 Calculated date range:", {
-      start: startDate.toISOString().split("T")[0],
-      end: endDate.toISOString().split("T")[0],
-    });
-
-    return {
+    const result = {
       startDate: startDate.toISOString().split("T")[0],
       endDate: endDate.toISOString().split("T")[0],
     };
+    console.log("💠 Calculated date range:", result);
+    return result;
   }
 
   function calculateAttendanceSummaryWithCycles(
@@ -1956,22 +1871,38 @@ module.exports = function registerEndpoint(router, { services }) {
     cycles,
     cycleType = null
   ) {
+    console.log("🚀 Entered calculateAttendanceSummaryWithCycles");
+    console.log("🔍 Input parameters:", {
+      recordsLength: records.length,
+      cycleType,
+      cyclesLength: cycles.length,
+    });
+
     let selectedCycle = cycles[0];
+    console.log("🔍 Defaulting to first cycle:", selectedCycle);
 
     if (cycleType) {
+      console.log("🔍 Searching for cycle matching cycleType:", cycleType);
       const foundCycle = cycles.find((cycle) => cycle.cycleId == cycleType);
       if (foundCycle) {
         selectedCycle = foundCycle;
+        console.log("✅ Found matching cycle:", selectedCycle);
+      } else {
+        console.warn("💠 No matching cycle found for cycleType:", cycleType);
       }
     }
 
     const { includeWeekends, includeHolidays } = selectedCycle;
+    console.log("🔍 Cycle settings:", { includeWeekends, includeHolidays });
 
-    return calculateAttendanceSummary(
+    console.log("🔍 Calling calculateAttendanceSummary...");
+    const summary = calculateAttendanceSummary(
       records,
       includeWeekends,
       includeHolidays
     );
+    console.log("✅ Summary calculated:", summary);
+    return summary;
   }
 
   function calculateAttendanceSummary(
@@ -1979,6 +1910,13 @@ module.exports = function registerEndpoint(router, { services }) {
     includeWeekoffs,
     includeHolidays
   ) {
+    console.log("🚀 Entered calculateAttendanceSummary");
+    console.log("🔍 Input parameters:", {
+      recordsLength: records.length,
+      includeWeekoffs,
+      includeHolidays,
+    });
+
     const summary = {
       present: 0,
       absent: 0,
@@ -2000,6 +1938,7 @@ module.exports = function registerEndpoint(router, { services }) {
       totalPayableDays: 0,
       totalDaysOfMonth: 0,
     };
+    console.log("🔍 Initialized summary:", summary);
 
     if (records.length > 0) {
       const firstRecord = records[0];
@@ -2008,15 +1947,26 @@ module.exports = function registerEndpoint(router, { services }) {
         const year = date.getFullYear();
         const month = date.getMonth() + 1;
         summary.totalDaysOfMonth = new Date(year, month, 0).getDate();
+        console.log("🔍 Set totalDaysOfMonth:", summary.totalDaysOfMonth);
       }
     }
 
-    records.forEach((record) => {
+    console.log("🔍 Processing records...");
+    records.forEach((record, index) => {
+      console.log(
+        `🔍 Processing record ${index + 1}/${records.length}:`,
+        record
+      );
+
       // Handle Holiday and WeeklyOff first
       if (record.attendanceContext === "Holiday") {
         summary.holiday += 1;
         const payableDay = includeHolidays ? 1 : 0;
         summary.totalPayableDays += payableDay;
+        console.log("🔍 Processed Holiday, updated summary:", {
+          holiday: summary.holiday,
+          totalPayableDays: summary.totalPayableDays,
+        });
         return;
       }
 
@@ -2024,11 +1974,18 @@ module.exports = function registerEndpoint(router, { services }) {
         summary.weekOff += 1;
         const payableDay = includeWeekoffs ? 1 : 0;
         summary.totalPayableDays += payableDay;
+        console.log("🔍 Processed WeeklyOff, updated summary:", {
+          weekOff: summary.weekOff,
+          totalPayableDays: summary.totalPayableDays,
+        });
         return;
       }
 
       if (record.attendanceContext === "Unpaid Leave") {
         summary.unPaidLeave += 1;
+        console.log("🔍 Processed Unpaid Leave, updated summary:", {
+          unPaidLeave: summary.unPaidLeave,
+        });
         return;
       }
 
@@ -2040,9 +1997,11 @@ module.exports = function registerEndpoint(router, { services }) {
       } else if (dayValue > 1) {
         considerableDay = 1.0;
       }
+      console.log("🔍 Calculated day values:", { dayValue, considerableDay });
 
       if (record.attendanceContext) {
         const context = record.attendanceContext;
+        console.log("🔍 Processing attendanceContext:", context);
 
         // Regular expression to parse attendance context
         const contextRegex =
@@ -2054,11 +2013,12 @@ module.exports = function registerEndpoint(router, { services }) {
         let isHolidayPresent = false;
         let deductions = [];
 
-        // Extract all parts of the context
+        console.log("🔍 Parsing context with regex...");
         while ((matches = contextRegex.exec(context)) !== null) {
           const status = matches[1];
           const deduction = matches[2];
           const reason = matches[3];
+          console.log("🔍 Regex match:", { status, deduction, reason });
 
           if (status === "Present") isPresent = true;
           if (status === "WeekoffPresent") isWeekoffPresent = true;
@@ -2070,23 +2030,32 @@ module.exports = function registerEndpoint(router, { services }) {
 
         // If no status is explicitly mentioned, check for standalone leave types
         if (!isPresent && !isWeekoffPresent && !isHolidayPresent) {
+          console.log("🔍 Checking for standalone leave types...");
           const leaveMatch = context.match(/(\d\/\d)?([A-Z]+)(?:\((\w+)\))?/);
           if (leaveMatch) {
             const fraction = leaveMatch[1];
             const leaveType = leaveMatch[2];
             const reason = leaveMatch[3];
+            console.log("🔍 Leave match:", { fraction, leaveType, reason });
 
             let leaveValue = fraction
               ? parseFloat(fraction.split("/")[0]) /
                 parseFloat(fraction.split("/")[1])
               : 1.0;
+            console.log("🔍 Calculated leaveValue:", leaveValue);
 
             if (leaveType === "LOP") {
               summary.unPaidLeave += leaveValue;
               summary.absent += leaveValue;
               if (reason === "DueToLate") summary.lateComing += 1;
               if (reason === "Early") summary.earlyLeaving += 1;
-              if (reason === "WH") summary.absent += leaveValue; // WH impacts absent
+              if (reason === "WH") summary.absent += leaveValue;
+              console.log("🔍 Processed LOP, updated summary:", {
+                unPaidLeave: summary.unPaidLeave,
+                absent: summary.absent,
+                lateComing: summary.lateComing,
+                earlyLeaving: summary.earlyLeaving,
+              });
             } else {
               summary.paidLeave += leaveValue;
               record.leaveType = record.leaveType || leaveType.toLowerCase();
@@ -2094,37 +2063,65 @@ module.exports = function registerEndpoint(router, { services }) {
               if (reason === "DueToLate") summary.lateComing += 1;
               if (reason === "Early") summary.earlyLeaving += 1;
               if (reason === "WH") summary.absent += leaveValue;
+              console.log("🔍 Processed paid leave, updated summary:", {
+                paidLeave: summary.paidLeave,
+                absent: summary.absent,
+                leaveType: record.leaveType,
+                lateComing: summary.lateComing,
+                earlyLeaving: summary.earlyLeaving,
+              });
             }
             return;
           }
         }
 
-        // Handle combined deductions (e.g., Present(1/2LOP)(DueToLate)(1/4LOP)(Early))
+        // Handle combined deductions
         let totalDeduction = 0;
         let leaveTypeAssigned = false;
-
-        parsedItems.forEach(({ deduction, reason }) => {
+        console.log("🔍 Processing parsedItems for deductions...");
+        parsedItems.forEach(({ deduction, reason }, idx) => {
+          console.log(
+            `🔍 Processing deduction ${idx + 1}/${parsedItems.length}:`,
+            { deduction, reason }
+          );
           const [fraction, type] = deduction.split(/([A-Z]+)/);
           let value = fraction
             ? parseFloat(fraction.split("/")[0]) /
               parseFloat(fraction.split("/")[1])
             : 1.0;
+          console.log("🔍 Deduction value:", value);
 
           if (type === "LOP") {
             summary.unPaidLeave += value;
             summary.absent += value;
             totalDeduction += value;
+            console.log("🔍 Processed LOP deduction, updated summary:", {
+              unPaidLeave: summary.unPaidLeave,
+              absent: summary.absent,
+              totalDeduction,
+            });
           } else {
             summary.paidLeave += value;
             summary.absent += value;
             record.leaveType = record.leaveType || type.toLowerCase();
             leaveTypeAssigned = true;
             totalDeduction += value;
+            console.log("🔍 Processed paid leave deduction, updated summary:", {
+              paidLeave: summary.paidLeave,
+              absent: summary.absent,
+              leaveType: record.leaveType,
+              totalDeduction,
+            });
           }
 
           if (reason === "DueToLate") summary.lateComing += 1;
           if (reason === "Early") summary.earlyLeaving += 1;
           if (reason === "WH") summary.absent += value;
+          console.log("🔍 Updated reasons:", {
+            lateComing: summary.lateComing,
+            earlyLeaving: summary.earlyLeaving,
+            absent: summary.absent,
+          });
         });
 
         // Adjust based on status
@@ -2132,14 +2129,26 @@ module.exports = function registerEndpoint(router, { services }) {
           const presentValue = Math.max(0, considerableDay - totalDeduction);
           summary.present += presentValue;
           summary.totalPayableDays += presentValue;
+          console.log("🔍 Processed Present, updated summary:", {
+            present: summary.present,
+            totalPayableDays: summary.totalPayableDays,
+          });
         } else if (isWeekoffPresent) {
           const presentValue = Math.max(0, considerableDay - totalDeduction);
           summary.weekoffPresent += presentValue;
           summary.totalPayableDays += presentValue;
+          console.log("🔍 Processed WeekoffPresent, updated summary:", {
+            weekoffPresent: summary.weekoffPresent,
+            totalPayableDays: summary.totalPayableDays,
+          });
         } else if (isHolidayPresent) {
           const presentValue = Math.max(0, considerableDay - totalDeduction);
           summary.holidayPresent += presentValue;
           summary.totalPayableDays += presentValue;
+          console.log("🔍 Processed HolidayPresent, updated summary:", {
+            holidayPresent: summary.holidayPresent,
+            totalPayableDays: summary.totalPayableDays,
+          });
         }
 
         // Handle specific known contexts
@@ -2147,21 +2156,44 @@ module.exports = function registerEndpoint(router, { services }) {
           summary.halfDay += 0.5;
           summary.absent += 0.5;
           summary.totalPayableDays += 0.5;
+          console.log("🔍 Processed half-day present, updated summary:", {
+            halfDay: summary.halfDay,
+            absent: summary.absent,
+            totalPayableDays: summary.totalPayableDays,
+          });
         } else if (context === "Present" || context === "P") {
           summary.present += considerableDay;
           summary.totalPayableDays += considerableDay;
+          console.log("🔍 Processed Present, updated summary:", {
+            present: summary.present,
+            totalPayableDays: summary.totalPayableDays,
+          });
         } else if (context === "Absent" || context === "A") {
           if (record.attendance === "unPaidLeave") {
             summary.unPaidLeave += considerableDay;
+            console.log("🔍 Processed unPaidLeave, updated summary:", {
+              unPaidLeave: summary.unPaidLeave,
+            });
           } else {
             summary.absent += considerableDay;
+            console.log("🔍 Processed Absent, updated summary:", {
+              absent: summary.absent,
+            });
           }
         } else if (context === "WorkFromHome" || context === "WFH") {
           summary.workFromHome += considerableDay;
           summary.totalPayableDays += considerableDay;
+          console.log("🔍 Processed WorkFromHome, updated summary:", {
+            workFromHome: summary.workFromHome,
+            totalPayableDays: summary.totalPayableDays,
+          });
         } else if (context === "Present On OD" || context === "P(OD)") {
           summary.onDuty += considerableDay;
           summary.totalPayableDays += considerableDay;
+          console.log("🔍 Processed OnDuty, updated summary:", {
+            onDuty: summary.onDuty,
+            totalPayableDays: summary.totalPayableDays,
+          });
         } else if (
           context === "WeeklyOff Present" ||
           context === "WOP" ||
@@ -2170,15 +2202,27 @@ module.exports = function registerEndpoint(router, { services }) {
         ) {
           summary.weekoffPresent += considerableDay;
           summary.totalPayableDays += considerableDay;
+          console.log("🔍 Processed WeeklyOff Present, updated summary:", {
+            weekoffPresent: summary.weekoffPresent,
+            totalPayableDays: summary.totalPayableDays,
+          });
         } else if (
           context === "WeeklyOff 1/2Present" ||
           context === "WOA1/2P"
         ) {
           summary.weekoffPresent += 0.5;
           summary.totalPayableDays += 0.5;
+          console.log("🔍 Processed WeeklyOff half-day, updated summary:", {
+            weekoffPresent: summary.weekoffPresent,
+            totalPayableDays: summary.totalPayableDays,
+          });
         } else if (context === "HolidayPresent") {
           summary.holidayPresent += considerableDay;
           summary.totalPayableDays += considerableDay;
+          console.log("🔍 Processed HolidayPresent, updated summary:", {
+            holidayPresent: summary.holidayPresent,
+            totalPayableDays: summary.totalPayableDays,
+          });
         } else if (context.includes("On Leave")) {
           const leaveMatch = context.match(/(\d\/\d)?([A-Z]+)(?:\((\w+)\))?/);
           if (leaveMatch) {
@@ -2188,16 +2232,32 @@ module.exports = function registerEndpoint(router, { services }) {
               ? parseFloat(fraction.split("/")[0]) /
                 parseFloat(fraction.split("/")[1])
               : 1.0;
+            console.log("🔍 Leave match for On Leave:", {
+              fraction,
+              leaveType,
+              leaveValue,
+            });
 
             if (leaveType === "LOP") {
               summary.unPaidLeave += leaveValue;
               summary.absent += leaveValue;
+              console.log("🔍 Processed LOP leave, updated summary:", {
+                unPaidLeave: summary.unPaidLeave,
+                absent: summary.absent,
+              });
             } else {
               summary.paidLeave += leaveValue;
               record.leaveType = record.leaveType || leaveType.toLowerCase();
+              console.log("🔍 Processed paid leave, updated summary:", {
+                paidLeave: summary.paidLeave,
+                leaveType: record.leaveType,
+              });
             }
           } else {
             summary.paidLeave += considerableDay;
+            console.log("🔍 Processed default paid leave, updated summary:", {
+              paidLeave: summary.paidLeave,
+            });
           }
         } else {
           console.warn(`💠 Unmatched attendance context: "${context}"`);
@@ -2205,45 +2265,98 @@ module.exports = function registerEndpoint(router, { services }) {
             case "present":
               summary.present += considerableDay;
               summary.totalPayableDays += considerableDay;
+              console.log("🔍 Processed default present, updated summary:", {
+                present: summary.present,
+                totalPayableDays: summary.totalPayableDays,
+              });
               break;
             case "absent":
               summary.absent += considerableDay;
+              console.log("🔍 Processed default absent, updated summary:", {
+                absent: summary.absent,
+              });
               break;
             case "weekOff":
               summary.weekOff += 1;
               summary.totalPayableDays += includeWeekoffs ? 1 : 0;
+              console.log("🔍 Processed default weekOff, updated summary:", {
+                weekOff: summary.weekOff,
+                totalPayableDays: summary.totalPayableDays,
+              });
               break;
             case "holiday":
               summary.holiday += 1;
               summary.totalPayableDays += includeHolidays ? 1 : 0;
+              console.log("🔍 Processed default holiday, updated summary:", {
+                holiday: summary.holiday,
+                totalPayableDays: summary.totalPayableDays,
+              });
               break;
             case "onDuty":
               summary.onDuty += considerableDay;
               summary.totalPayableDays += considerableDay;
+              console.log("🔍 Processed default onDuty, updated summary:", {
+                onDuty: summary.onDuty,
+                totalPayableDays: summary.totalPayableDays,
+              });
               break;
             case "workFromHome":
               summary.workFromHome += considerableDay;
               summary.totalPayableDays += considerableDay;
+              console.log(
+                "🔍 Processed default workFromHome, updated summary:",
+                {
+                  workFromHome: summary.workFromHome,
+                  totalPayableDays: summary.totalPayableDays,
+                }
+              );
               break;
             case "halfDay":
               summary.halfDay += considerableDay;
               summary.present += considerableDay;
               summary.absent += 1 - considerableDay;
               summary.totalPayableDays += considerableDay;
+              console.log("🔍 Processed default halfDay, updated summary:", {
+                halfDay: summary.halfDay,
+                present: summary.present,
+                absent: summary.absent,
+                totalPayableDays: summary.totalPayableDays,
+              });
               break;
             case "paidLeave":
               summary.paidLeave += considerableDay;
+              console.log("🔍 Processed default paidLeave, updated summary:", {
+                paidLeave: summary.paidLeave,
+              });
               break;
             case "unPaidLeave":
               summary.unPaidLeave += considerableDay;
+              console.log(
+                "🔍 Processed default unPaidLeave, updated summary:",
+                { unPaidLeave: summary.unPaidLeave }
+              );
               break;
             case "holidayPresent":
               summary.holidayPresent += considerableDay;
               summary.totalPayableDays += considerableDay;
+              console.log(
+                "🔍 Processed default holidayPresent, updated summary:",
+                {
+                  holidayPresent: summary.holidayPresent,
+                  totalPayableDays: summary.totalPayableDays,
+                }
+              );
               break;
             case "weekoffPresent":
               summary.weekoffPresent += considerableDay;
               summary.totalPayableDays += considerableDay;
+              console.log(
+                "🔍 Processed default weekoffPresent, updated summary:",
+                {
+                  weekoffPresent: summary.weekoffPresent,
+                  totalPayableDays: summary.totalPayableDays,
+                }
+              );
               break;
           }
         }
@@ -2251,18 +2364,36 @@ module.exports = function registerEndpoint(router, { services }) {
         // Handle early departure, late coming, and overtime
         if (record.earlyDeparture && record.earlyDeparture !== "00:00:00") {
           summary.earlyLeaving += 1;
+          console.log("🔍 Processed earlyDeparture, updated summary:", {
+            earlyLeaving: summary.earlyLeaving,
+          });
         }
         if (record.lateBy && record.lateBy !== "00:00:00") {
           summary.lateComing += 1;
+          console.log("🔍 Processed lateComing, updated summary:", {
+            lateComing: summary.lateComing,
+          });
         }
         if (record.overTime && record.overTime !== "00:00:00") {
           if (isPresent) {
             summary.workingDayOT += 1;
+            console.log("🔍 Processed workingDayOT, updated summary:", {
+              workingDayOT: summary.workingDayOT,
+            });
           } else if (isWeekoffPresent) {
             summary.weekoffPresentOT += 1;
+            console.log("🔍 Processed weekoffPresentOT, updated summary:", {
+              weekoffPresentOT: summary.weekoffPresentOT,
+            });
           } else if (isHolidayPresent) {
             summary.holidayPresentOT += 1;
-          } else if (context === "WorkFromHome" || context === "WFH") {
+            console.log("🔍 Processed holidayPresentOT, updated summary:", {
+              holidayPresentOT: summary.holidayPresentOT,
+            });
+          } else if (
+            record.attendanceContext === "WorkFromHome" ||
+            record.attendance === "workFromHome"
+          ) {
             summary.workFromHomeOT += 1;
           } else {
             switch (record.attendance) {
@@ -2283,36 +2414,43 @@ module.exports = function registerEndpoint(router, { services }) {
         }
       }
     });
-
-    console.log("💠 Calculated summary:", summary);
+    console.log("✅ Completed processing records, final summary:", summary);
     return summary;
   }
 
-  function getAllDatesInRange(startDateStr, endDateStr) {
-    const dates = [];
-    const startDate = new Date(startDateStr);
-    const endDate = new Date(endDateStr);
+  function getAllDatesInRange(startDate, endDate) {
+    console.log("🚀 Entered getAllDatesInRange");
+    console.log("🔍 Input parameters:", { startDate, endDate });
 
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-      console.error("❌ Invalid date range inputs:", {
-        startDateStr,
-        endDateStr,
-      });
-      throw new Error("Invalid date range for getAllDatesInRange");
+    const dates = [];
+    let currentDate = new Date(startDate);
+    const end = new Date(endDate);
+    console.log("🔍 Start date:", currentDate.toISOString());
+    console.log("🔍 End date:", end.toISOString());
+
+    if (isNaN(currentDate.getTime()) || isNaN(end.getTime())) {
+      console.error("❌ Invalid date inputs:", { startDate, endDate });
+      throw new Error("Invalid date range");
     }
 
-    const currentDate = new Date(startDate);
-
-    while (currentDate <= endDate) {
+    console.log("🔍 Generating date range...");
+    while (currentDate <= end) {
       dates.push(new Date(currentDate));
       currentDate.setDate(currentDate.getDate() + 1);
+      console.log(
+        `🔍 Added date: ${dates[dates.length - 1].toISOString().split("T")[0]}`
+      );
     }
 
+    console.log("✅ Date range generated, length:", dates.length);
     return dates;
   }
 
-  function getMonthName(monthNumber) {
-    const months = [
+  function getMonthName(month) {
+    console.log("🚀 Entered getMonthName");
+    console.log("🔍 Input parameter:", { month });
+
+    const monthNames = [
       "January",
       "February",
       "March",
@@ -2326,20 +2464,14 @@ module.exports = function registerEndpoint(router, { services }) {
       "November",
       "December",
     ];
-    return months[monthNumber - 1] || "Unknown";
+
+    if (month < 1 || month > 12 || isNaN(month)) {
+      console.warn("💠 Invalid month, defaulting to January:", month);
+      return monthNames[0];
+    }
+
+    const monthName = monthNames[month - 1];
+    console.log("✅ Month name:", monthName);
+    return monthName;
   }
-};
-
-const addTime = (time1, time2) => {
-  const [h1, m1, s1] = time1.split(":").map(Number);
-  const [h2, m2, s2] = time2.split(":").map(Number);
-
-  let seconds = s1 + s2;
-  let minutes = m1 + m2 + Math.floor(seconds / 60);
-  let hours = h1 + h2 + Math.floor(minutes / 60);
-
-  return `${String(hours).padStart(2, "0")}:${String(minutes % 60).padStart(
-    2,
-    "0"
-  )}:${String(seconds % 60).padStart(2, "0")}`;
 };
