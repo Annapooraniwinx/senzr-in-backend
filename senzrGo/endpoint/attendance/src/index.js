@@ -4,7 +4,7 @@ module.exports = function registerEndpoint(router, { services }) {
   // Attendance dashboard
   router.get("/monthly-dashboard", async (req, res) => {
     try {
-      console.log("🚀 Starting /monthly-dashboard route");
+      console.log("🚀 JesonLuna Starting /monthly-dashboard route");
 
       // Filter parsing
       let filter = {};
@@ -13,75 +13,53 @@ module.exports = function registerEndpoint(router, { services }) {
         if (typeof req.query.filter === "string") {
           try {
             filter = JSON.parse(req.query.filter);
-            console.log(
-              "✅ Filter parsed from string:",
-              JSON.stringify(filter)
-            );
           } catch (e) {
             console.error("❌ Failed to parse filter JSON", e);
           }
         } else if (typeof req.query.filter === "object") {
           filter = req.query.filter;
-          console.log("✅ Filter received as object:", JSON.stringify(filter));
         }
       }
 
       // Tenant ID extraction
       let tenantId = req.query.tenantId;
-      console.log("🔍 Extracting tenantId...");
       if (!tenantId) {
         const filterAnd = filter._and || [];
         tenantId = filterAnd.find((f) => f.tenant)?.tenant?.tenantId?._eq;
-        console.log("🔍 TenantId from filter:", tenantId);
       }
-      console.log("✅ Final tenantId:", tenantId);
 
       // Year extraction
       let year = req.query.year ? parseInt(req.query.year) : null;
-      console.log("🔍 Extracting year...");
       if (!year) {
         const filterAnd = filter._and || [];
         year = filterAnd.find((f) => f["year(date)"])?.["year(date)"]?._eq;
-        console.log("🔍 Year from filter:", year);
       }
-      console.log("✅ Final year:", year);
 
       // Month extraction
       let month = req.query.month ? parseInt(req.query.month) : null;
-      console.log("🔍 Extracting month...");
       if (!month) {
         const filterAnd = filter._and || [];
         month = filterAnd.find((f) => f["month(date)"])?.["month(date)"]?._eq;
-        console.log("🔍 Month from filter:", month);
       }
-      console.log("✅ Final month:", month);
 
       // Start date extraction
       let startDate = req.query.startDate;
-      console.log("🔍 Extracting startDate...");
       if (!startDate) {
         const filterAnd = filter._and || [];
         startDate = filterAnd.find((f) => f.date?._gte)?.date?._gte;
-        console.log("🔍 StartDate from filter:", startDate);
       }
-      console.log("✅ Final startDate:", startDate);
 
       // End date extraction
       let endDate = req.query.endDate;
-      console.log("🔍 Extracting endDate...");
       if (!endDate) {
         const filterAnd = filter._and || [];
         endDate = filterAnd.find((f) => f.date?._lte)?.date?._lte;
-        console.log("🔍 EndDate from filter:", endDate);
       }
-      console.log("✅ Final endDate:", endDate);
 
       // Employee IDs extraction
       let employeeIds = [];
-      console.log("🔍 Extracting employeeIds...");
       if (req.query.employeeId) {
         employeeIds = req.query.employeeId.split(",").map((id) => id.trim());
-        console.log("🔍 EmployeeIds from query:", employeeIds);
       } else {
         const filterAnd = filter._and || [];
         const employeeFilter = filterAnd.find((f) => f.employeeId);
@@ -89,10 +67,8 @@ module.exports = function registerEndpoint(router, { services }) {
           employeeIds = employeeFilter.employeeId.id._in
             .split(",")
             .map((id) => id.trim());
-          console.log("🔍 EmployeeIds from filter _in:", employeeIds);
         } else if (employeeFilter?.employeeId?.id?._eq) {
           employeeIds = [employeeFilter.employeeId.id._eq];
-          console.log("🔍 EmployeeIds from filter _eq:", employeeIds);
         }
       }
       console.log("✅ Final employeeIds:", employeeIds);
@@ -126,16 +102,13 @@ module.exports = function registerEndpoint(router, { services }) {
       // Validate tenantId
       console.log("🔍 Validating tenantId...");
       if (!tenantId) {
-        console.log("❌ tenantId missing, returning error");
         return res.status(400).json({
           error: "Missing required parameter",
           message: "tenantId is required",
         });
       }
-      console.log("✅ tenantId validated");
 
       // Initialize services
-      console.log("🔍 Initializing services...");
       const attendanceCycleService = new ItemsService("attendanceCycle", {
         schema: req.schema,
         accountability: req.accountability,
@@ -148,7 +121,6 @@ module.exports = function registerEndpoint(router, { services }) {
         schema: req.schema,
         accountability: req.accountability,
       });
-      console.log("✅ Services initialized");
 
       // Fetch cycle settings
       console.log("🔍 Fetching cycle settings...");
@@ -533,6 +505,7 @@ module.exports = function registerEndpoint(router, { services }) {
       console.log("✅ Selected cycle:", selectedCycle);
 
       console.log("🔍 Calculating date range...");
+      console.log("🚀 JesonLuna Starting /monthly-dashboard route");
       const { startDate, endDate } = calculateDateRangeFromCycles(
         currentYear,
         currentMonth,
@@ -1349,7 +1322,7 @@ module.exports = function registerEndpoint(router, { services }) {
         "✅ dailyAttendance created, length:",
         dailyAttendance.length
       );
-
+      console.log("🚀 JesonLuna Starting /monthly-dashboard route");
       console.log("🔍 Calculating monthly summary...");
       const monthlySummary = calculateAttendanceSummaryWithCycles(
         records,
@@ -1546,6 +1519,7 @@ module.exports = function registerEndpoint(router, { services }) {
       });
 
       console.log("🔍 Calculating date range...");
+      console.log("🚀 JesonLuna Starting /monthly-dashboard route");
       const { startDate, endDate } = calculateDateRangeFromCycles(
         year,
         month,
@@ -1939,6 +1913,7 @@ module.exports = function registerEndpoint(router, { services }) {
       totalDaysOfMonth: 0,
     };
     console.log("🔍 Initialized summary:", summary);
+    console.log("🚀 JesonLuna Starting /monthly-dashboard route");
 
     if (records.length > 0) {
       const firstRecord = records[0];
@@ -1981,14 +1956,6 @@ module.exports = function registerEndpoint(router, { services }) {
         return;
       }
 
-      if (record.attendanceContext === "Unpaid Leave") {
-        summary.unPaidLeave += 1;
-        console.log("🔍 Processed Unpaid Leave, updated summary:", {
-          unPaidLeave: summary.unPaidLeave,
-        });
-        return;
-      }
-
       const dayValue =
         record.day && !isNaN(record.day) ? Number.parseFloat(record.day) : 0;
       let considerableDay = dayValue;
@@ -1998,404 +1965,322 @@ module.exports = function registerEndpoint(router, { services }) {
         considerableDay = 1.0;
       }
       console.log("🔍 Calculated day values:", { dayValue, considerableDay });
+      console.log("🚀 JesonLuna Starting /monthly-dashboard route");
+
+      // IMPROVED VERSION - Replace the regex parsing section in calculateAttendanceSummary
 
       if (record.attendanceContext) {
-        const context = record.attendanceContext;
+        const context = record.attendanceContext.trim();
         console.log("🔍 Processing attendanceContext:", context);
 
-        // Regular expression to parse attendance context
-        const contextRegex =
-          /(Present|WeekoffPresent|HolidayPresent)?(?:\((.*?)\))?(?:\((\w+)\))?/g;
-        let matches;
-        let parsedItems = [];
-        let isPresent = false;
-        let isWeekoffPresent = false;
-        let isHolidayPresent = false;
-        let deductions = [];
+        let processed = false;
 
-        console.log("🔍 Parsing context with regex...");
-        while ((matches = contextRegex.exec(context)) !== null) {
-          const status = matches[1];
-          const deduction = matches[2];
-          const reason = matches[3];
-          console.log("🔍 Regex match:", { status, deduction, reason });
+        // =================================================================
+        // FULL DAY ATTENDANCE (10 cases)
+        // =================================================================
 
-          if (status === "Present") isPresent = true;
-          if (status === "WeekoffPresent") isWeekoffPresent = true;
-          if (status === "HolidayPresent") isHolidayPresent = true;
-          if (deduction) {
-            parsedItems.push({ deduction, reason });
-          }
+        // Present
+        if (context === "Present") {
+          summary.present += 1;
+          summary.totalPayableDays += 1;
+          processed = true;
+          console.log("✅ Processed: Present");
+        }
+        // Absent
+        else if (context === "Absent") {
+          summary.absent += 1;
+          processed = true;
+          console.log("✅ Processed: Absent");
+        }
+        // Holiday
+        else if (context === "Holiday") {
+          summary.holiday += 1;
+          summary.totalPayableDays += includeHolidays ? 1 : 0;
+          processed = true;
+          console.log("✅ Processed: Holiday");
+        }
+        // WeeklyOff
+        else if (context === "WeeklyOff") {
+          summary.weekOff += 1;
+          summary.totalPayableDays += includeWeekoffs ? 1 : 0;
+          processed = true;
+          console.log("✅ Processed: WeeklyOff");
+        }
+        // WeeklyOff Present
+        else if (context === "WeeklyOff Present") {
+          summary.weekoffPresent += 1;
+          summary.totalPayableDays += 1;
+          processed = true;
+          console.log("✅ Processed: WeeklyOff Present");
+        }
+        // Holiday Present
+        else if (context === "Holiday Present") {
+          summary.holidayPresent += 1;
+          summary.totalPayableDays += 1;
+          processed = true;
+          console.log("✅ Processed: Holiday Present");
+        }
+        // On Leave
+        else if (context === "On Leave") {
+          summary.paidLeave += 1;
+          summary.totalPayableDays += 1;
+          processed = true;
+          console.log("✅ Processed: On Leave");
+        }
+        // UnPaidLeave
+        else if (context === "UnPaidLeave") {
+          summary.unPaidLeave += 1;
+          processed = true;
+          console.log("✅ Processed: UnPaidLeave");
+        }
+        // On OD
+        else if (context === "On OD") {
+          summary.onDuty += 1;
+          summary.totalPayableDays += 1;
+          processed = true;
+          console.log("✅ Processed: On OD");
+        }
+        // Work From Home
+        else if (context === "Work From Home") {
+          summary.workFromHome += 1;
+          summary.totalPayableDays += 1;
+          processed = true;
+          console.log("✅ Processed: Work From Home");
         }
 
-        // If no status is explicitly mentioned, check for standalone leave types
-        if (!isPresent && !isWeekoffPresent && !isHolidayPresent) {
-          console.log("🔍 Checking for standalone leave types...");
-          const leaveMatch = context.match(/(\d\/\d)?([A-Z]+)(?:\((\w+)\))?/);
-          if (leaveMatch) {
-            const fraction = leaveMatch[1];
-            const leaveType = leaveMatch[2];
-            const reason = leaveMatch[3];
-            console.log("🔍 Leave match:", { fraction, leaveType, reason });
+        // =================================================================
+        // COMBINED HALF DAY ATTENDANCE (15 cases)
+        // =================================================================
 
-            let leaveValue = fraction
-              ? parseFloat(fraction.split("/")[0]) /
-                parseFloat(fraction.split("/")[1])
-              : 1.0;
-            console.log("🔍 Calculated leaveValue:", leaveValue);
-
-            if (leaveType === "LOP") {
-              summary.unPaidLeave += leaveValue;
-              summary.absent += leaveValue;
-              if (reason === "DueToLate") summary.lateComing += 1;
-              if (reason === "Early") summary.earlyLeaving += 1;
-              if (reason === "WH") summary.absent += leaveValue;
-              console.log("🔍 Processed LOP, updated summary:", {
-                unPaidLeave: summary.unPaidLeave,
-                absent: summary.absent,
-                lateComing: summary.lateComing,
-                earlyLeaving: summary.earlyLeaving,
-              });
-            } else {
-              summary.paidLeave += leaveValue;
-              record.leaveType = record.leaveType || leaveType.toLowerCase();
-              summary.absent += leaveValue;
-              if (reason === "DueToLate") summary.lateComing += 1;
-              if (reason === "Early") summary.earlyLeaving += 1;
-              if (reason === "WH") summary.absent += leaveValue;
-              console.log("🔍 Processed paid leave, updated summary:", {
-                paidLeave: summary.paidLeave,
-                absent: summary.absent,
-                leaveType: record.leaveType,
-                lateComing: summary.lateComing,
-                earlyLeaving: summary.earlyLeaving,
-              });
-            }
-            return;
-          }
-        }
-
-        // Handle combined deductions
-        let totalDeduction = 0;
-        let leaveTypeAssigned = false;
-        console.log("🔍 Processing parsedItems for deductions...");
-        parsedItems.forEach(({ deduction, reason }, idx) => {
-          console.log(
-            `🔍 Processing deduction ${idx + 1}/${parsedItems.length}:`,
-            { deduction, reason }
-          );
-          const [fraction, type] = deduction.split(/([A-Z]+)/);
-          let value = fraction
-            ? parseFloat(fraction.split("/")[0]) /
-              parseFloat(fraction.split("/")[1])
-            : 1.0;
-          console.log("🔍 Deduction value:", value);
-
-          if (type === "LOP") {
-            summary.unPaidLeave += value;
-            summary.absent += value;
-            totalDeduction += value;
-            console.log("🔍 Processed LOP deduction, updated summary:", {
-              unPaidLeave: summary.unPaidLeave,
-              absent: summary.absent,
-              totalDeduction,
-            });
-          } else {
-            summary.paidLeave += value;
-            summary.absent += value;
-            record.leaveType = record.leaveType || type.toLowerCase();
-            leaveTypeAssigned = true;
-            totalDeduction += value;
-            console.log("🔍 Processed paid leave deduction, updated summary:", {
-              paidLeave: summary.paidLeave,
-              absent: summary.absent,
-              leaveType: record.leaveType,
-              totalDeduction,
-            });
-          }
-
-          if (reason === "DueToLate") summary.lateComing += 1;
-          if (reason === "Early") summary.earlyLeaving += 1;
-          if (reason === "WH") summary.absent += value;
-          console.log("🔍 Updated reasons:", {
-            lateComing: summary.lateComing,
-            earlyLeaving: summary.earlyLeaving,
-            absent: summary.absent,
-          });
-        });
-
-        // Adjust based on status
-        if (isPresent) {
-          const presentValue = Math.max(0, considerableDay - totalDeduction);
-          summary.present += presentValue;
-          summary.totalPayableDays += presentValue;
-          console.log("🔍 Processed Present, updated summary:", {
-            present: summary.present,
-            totalPayableDays: summary.totalPayableDays,
-          });
-        } else if (isWeekoffPresent) {
-          const presentValue = Math.max(0, considerableDay - totalDeduction);
-          summary.weekoffPresent += presentValue;
-          summary.totalPayableDays += presentValue;
-          console.log("🔍 Processed WeekoffPresent, updated summary:", {
-            weekoffPresent: summary.weekoffPresent,
-            totalPayableDays: summary.totalPayableDays,
-          });
-        } else if (isHolidayPresent) {
-          const presentValue = Math.max(0, considerableDay - totalDeduction);
-          summary.holidayPresent += presentValue;
-          summary.totalPayableDays += presentValue;
-          console.log("🔍 Processed HolidayPresent, updated summary:", {
-            holidayPresent: summary.holidayPresent,
-            totalPayableDays: summary.totalPayableDays,
-          });
-        }
-
-        // Handle specific known contexts
-        if (context === "1/2Present" || context === "1/2P") {
-          summary.halfDay += 0.5;
+        // 1/2Present 1/2Absent
+        else if (context === "1/2Present 1/2Absent") {
+          summary.present += 0.5;
           summary.absent += 0.5;
           summary.totalPayableDays += 0.5;
-          console.log("🔍 Processed half-day present, updated summary:", {
-            halfDay: summary.halfDay,
-            absent: summary.absent,
-            totalPayableDays: summary.totalPayableDays,
-          });
-        } else if (context === "Present" || context === "P") {
-          summary.present += considerableDay;
-          summary.totalPayableDays += considerableDay;
-          console.log("🔍 Processed Present, updated summary:", {
-            present: summary.present,
-            totalPayableDays: summary.totalPayableDays,
-          });
-        } else if (context === "Absent" || context === "A") {
-          if (record.attendance === "unPaidLeave") {
-            summary.unPaidLeave += considerableDay;
-            console.log("🔍 Processed unPaidLeave, updated summary:", {
-              unPaidLeave: summary.unPaidLeave,
-            });
-          } else {
-            summary.absent += considerableDay;
-            console.log("🔍 Processed Absent, updated summary:", {
-              absent: summary.absent,
-            });
-          }
-        } else if (context === "WorkFromHome" || context === "WFH") {
-          summary.workFromHome += considerableDay;
-          summary.totalPayableDays += considerableDay;
-          console.log("🔍 Processed WorkFromHome, updated summary:", {
-            workFromHome: summary.workFromHome,
-            totalPayableDays: summary.totalPayableDays,
-          });
-        } else if (context === "Present On OD" || context === "P(OD)") {
-          summary.onDuty += considerableDay;
-          summary.totalPayableDays += considerableDay;
-          console.log("🔍 Processed OnDuty, updated summary:", {
-            onDuty: summary.onDuty,
-            totalPayableDays: summary.totalPayableDays,
-          });
-        } else if (
-          context === "WeeklyOff Present" ||
-          context === "WOP" ||
-          context === "WeeklyOff Present On OD" ||
-          context === "WOP(OD)"
-        ) {
-          summary.weekoffPresent += considerableDay;
-          summary.totalPayableDays += considerableDay;
-          console.log("🔍 Processed WeeklyOff Present, updated summary:", {
-            weekoffPresent: summary.weekoffPresent,
-            totalPayableDays: summary.totalPayableDays,
-          });
-        } else if (
-          context === "WeeklyOff 1/2Present" ||
-          context === "WOA1/2P"
-        ) {
+          processed = true;
+          console.log("✅ Processed: 1/2Present 1/2Absent");
+        }
+        // 1/2WeeklyOff Present 1/2WeekOff
+        else if (context === "1/2WeeklyOff Present 1/2WeekOff") {
           summary.weekoffPresent += 0.5;
+          summary.weekOff += 0.5;
+          summary.totalPayableDays += 0.5 + (includeWeekoffs ? 0.5 : 0);
+          processed = true;
+          console.log("✅ Processed: 1/2WeeklyOff Present 1/2WeekOff");
+        }
+        // 1/2Holiday Present 1/2Holiday
+        else if (context === "1/2Holiday Present 1/2Holiday") {
+          summary.holidayPresent += 0.5;
+          summary.holiday += 0.5;
+          summary.totalPayableDays += 0.5 + (includeHolidays ? 0.5 : 0);
+          processed = true;
+          console.log("✅ Processed: 1/2Holiday Present 1/2Holiday");
+        }
+        // 1/2Present 1/2UnPaidLeave
+        else if (context === "1/2Present 1/2UnPaidLeave") {
+          summary.present += 0.5;
+          summary.unPaidLeave += 0.5;
           summary.totalPayableDays += 0.5;
-          console.log("🔍 Processed WeeklyOff half-day, updated summary:", {
-            weekoffPresent: summary.weekoffPresent,
-            totalPayableDays: summary.totalPayableDays,
-          });
-        } else if (context === "HolidayPresent") {
-          summary.holidayPresent += considerableDay;
-          summary.totalPayableDays += considerableDay;
-          console.log("🔍 Processed HolidayPresent, updated summary:", {
-            holidayPresent: summary.holidayPresent,
-            totalPayableDays: summary.totalPayableDays,
-          });
-        } else if (context.includes("On Leave")) {
-          const leaveMatch = context.match(/(\d\/\d)?([A-Z]+)(?:\((\w+)\))?/);
-          if (leaveMatch) {
-            const fraction = leaveMatch[1];
-            const leaveType = leaveMatch[2];
-            let leaveValue = fraction
-              ? parseFloat(fraction.split("/")[0]) /
-                parseFloat(fraction.split("/")[1])
-              : 1.0;
-            console.log("🔍 Leave match for On Leave:", {
-              fraction,
-              leaveType,
-              leaveValue,
-            });
+          processed = true;
+          console.log("✅ Processed: 1/2Present 1/2UnPaidLeave");
+        }
+        // 1/2WeeklyOff Present 1/2UnPaidLeave
+        else if (context === "1/2WeeklyOff Present 1/2UnPaidLeave") {
+          summary.weekoffPresent += 0.5;
+          summary.unPaidLeave += 0.5;
+          summary.totalPayableDays += 0.5;
+          processed = true;
+          console.log("✅ Processed: 1/2WeeklyOff Present 1/2UnPaidLeave");
+        }
+        // 1/2Holiday Present 1/2UnPaidLeave
+        else if (context === "1/2Holiday Present 1/2UnPaidLeave") {
+          summary.holidayPresent += 0.5;
+          summary.unPaidLeave += 0.5;
+          summary.totalPayableDays += 0.5;
+          processed = true;
+          console.log("✅ Processed: 1/2Holiday Present 1/2UnPaidLeave");
+        }
+        // 1/2Present 1/2On Leave
+        else if (context === "1/2Present 1/2On Leave") {
+          summary.present += 0.5;
+          summary.paidLeave += 0.5;
+          summary.totalPayableDays += 1;
+          processed = true;
+          console.log("✅ Processed: 1/2Present 1/2On Leave");
+        }
+        // 1/2WeeklyOff Present 1/2On Leave
+        else if (context === "1/2WeeklyOff Present 1/2On Leave") {
+          summary.weekoffPresent += 0.5;
+          summary.paidLeave += 0.5;
+          summary.totalPayableDays += 1;
+          processed = true;
+          console.log("✅ Processed: 1/2WeeklyOff Present 1/2On Leave");
+        }
+        // 1/2Holiday Present 1/2On Leave
+        else if (context === "1/2Holiday Present 1/2On Leave") {
+          summary.holidayPresent += 0.5;
+          summary.paidLeave += 0.5;
+          summary.totalPayableDays += 1;
+          processed = true;
+          console.log("✅ Processed: 1/2Holiday Present 1/2On Leave");
+        }
+        // 1/2On Leave 1/2Absent
+        else if (context === "1/2On Leave 1/2Absent") {
+          summary.paidLeave += 0.5;
+          summary.absent += 0.5;
+          summary.totalPayableDays += 0.5;
+          processed = true;
+          console.log("✅ Processed: 1/2On Leave 1/2Absent");
+        }
+        // 1/2On Leave 1/2WeeklyOff
+        else if (context === "1/2On Leave 1/2WeeklyOff") {
+          summary.paidLeave += 0.5;
+          summary.weekOff += 0.5;
+          summary.totalPayableDays += 0.5 + (includeWeekoffs ? 0.5 : 0);
+          processed = true;
+          console.log("✅ Processed: 1/2On Leave 1/2WeeklyOff");
+        }
+        // 1/2On Leave 1/2Holiday
+        else if (context === "1/2On Leave 1/2Holiday") {
+          summary.paidLeave += 0.5;
+          summary.holiday += 0.5;
+          summary.totalPayableDays += 0.5 + (includeHolidays ? 0.5 : 0);
+          processed = true;
+          console.log("✅ Processed: 1/2On Leave 1/2Holiday");
+        }
+        // 1/2UnPaidLeave 1/2Absent
+        else if (context === "1/2UnPaidLeave 1/2Absent") {
+          summary.unPaidLeave += 0.5;
+          summary.absent += 0.5;
+          processed = true;
+          console.log("✅ Processed: 1/2UnPaidLeave 1/2Absent");
+        }
+        // 1/2UnPaidLeave 1/2WeeklyOff
+        else if (context === "1/2UnPaidLeave 1/2WeeklyOff") {
+          summary.unPaidLeave += 0.5;
+          summary.weekOff += 0.5;
+          summary.totalPayableDays += includeWeekoffs ? 0.5 : 0;
+          processed = true;
+          console.log("✅ Processed: 1/2UnPaidLeave 1/2WeeklyOff");
+        }
+        // 1/2UnPaidLeave 1/2Holiday
+        else if (context === "1/2UnPaidLeave 1/2Holiday") {
+          summary.unPaidLeave += 0.5;
+          summary.holiday += 0.5;
+          summary.totalPayableDays += includeHolidays ? 0.5 : 0;
+          processed = true;
+          console.log("✅ Processed: 1/2UnPaidLeave 1/2Holiday");
+        }
 
-            if (leaveType === "LOP") {
-              summary.unPaidLeave += leaveValue;
-              summary.absent += leaveValue;
-              console.log("🔍 Processed LOP leave, updated summary:", {
-                unPaidLeave: summary.unPaidLeave,
-                absent: summary.absent,
-              });
-            } else {
-              summary.paidLeave += leaveValue;
-              record.leaveType = record.leaveType || leaveType.toLowerCase();
-              console.log("🔍 Processed paid leave, updated summary:", {
-                paidLeave: summary.paidLeave,
-                leaveType: record.leaveType,
-              });
-            }
-          } else {
-            summary.paidLeave += considerableDay;
-            console.log("🔍 Processed default paid leave, updated summary:", {
-              paidLeave: summary.paidLeave,
-            });
-          }
-        } else {
-          console.warn(`💠 Unmatched attendance context: "${context}"`);
+        // =================================================================
+        // FALLBACK - If no pattern matched
+        // =================================================================
+
+        if (!processed) {
+          console.warn(`⚠️ UNMATCHED attendance context: "${context}"`);
+          console.log(
+            "🔍 Falling back to record.attendance field:",
+            record.attendance
+          );
+
           switch (record.attendance) {
             case "present":
               summary.present += considerableDay;
               summary.totalPayableDays += considerableDay;
-              console.log("🔍 Processed default present, updated summary:", {
-                present: summary.present,
-                totalPayableDays: summary.totalPayableDays,
-              });
+              console.log("✅ Fallback: present");
               break;
             case "absent":
               summary.absent += considerableDay;
-              console.log("🔍 Processed default absent, updated summary:", {
-                absent: summary.absent,
-              });
+              console.log("✅ Fallback: absent");
               break;
             case "weekOff":
               summary.weekOff += 1;
               summary.totalPayableDays += includeWeekoffs ? 1 : 0;
-              console.log("🔍 Processed default weekOff, updated summary:", {
-                weekOff: summary.weekOff,
-                totalPayableDays: summary.totalPayableDays,
-              });
+              console.log("✅ Fallback: weekOff");
               break;
             case "holiday":
               summary.holiday += 1;
               summary.totalPayableDays += includeHolidays ? 1 : 0;
-              console.log("🔍 Processed default holiday, updated summary:", {
-                holiday: summary.holiday,
-                totalPayableDays: summary.totalPayableDays,
-              });
+              console.log("✅ Fallback: holiday");
               break;
             case "onDuty":
               summary.onDuty += considerableDay;
               summary.totalPayableDays += considerableDay;
-              console.log("🔍 Processed default onDuty, updated summary:", {
-                onDuty: summary.onDuty,
-                totalPayableDays: summary.totalPayableDays,
-              });
+              console.log("✅ Fallback: onDuty");
               break;
             case "workFromHome":
               summary.workFromHome += considerableDay;
               summary.totalPayableDays += considerableDay;
-              console.log(
-                "🔍 Processed default workFromHome, updated summary:",
-                {
-                  workFromHome: summary.workFromHome,
-                  totalPayableDays: summary.totalPayableDays,
-                }
-              );
+              console.log("✅ Fallback: workFromHome");
               break;
             case "halfDay":
               summary.halfDay += considerableDay;
               summary.present += considerableDay;
               summary.absent += 1 - considerableDay;
               summary.totalPayableDays += considerableDay;
-              console.log("🔍 Processed default halfDay, updated summary:", {
-                halfDay: summary.halfDay,
-                present: summary.present,
-                absent: summary.absent,
-                totalPayableDays: summary.totalPayableDays,
-              });
+              console.log("✅ Fallback: halfDay");
               break;
             case "paidLeave":
               summary.paidLeave += considerableDay;
-              console.log("🔍 Processed default paidLeave, updated summary:", {
-                paidLeave: summary.paidLeave,
-              });
+              summary.totalPayableDays += considerableDay;
+              console.log("✅ Fallback: paidLeave");
               break;
             case "unPaidLeave":
               summary.unPaidLeave += considerableDay;
-              console.log(
-                "🔍 Processed default unPaidLeave, updated summary:",
-                { unPaidLeave: summary.unPaidLeave }
-              );
+              console.log("✅ Fallback: unPaidLeave");
               break;
             case "holidayPresent":
               summary.holidayPresent += considerableDay;
               summary.totalPayableDays += considerableDay;
-              console.log(
-                "🔍 Processed default holidayPresent, updated summary:",
-                {
-                  holidayPresent: summary.holidayPresent,
-                  totalPayableDays: summary.totalPayableDays,
-                }
-              );
+              console.log("✅ Fallback: holidayPresent");
               break;
             case "weekoffPresent":
               summary.weekoffPresent += considerableDay;
               summary.totalPayableDays += considerableDay;
-              console.log(
-                "🔍 Processed default weekoffPresent, updated summary:",
-                {
-                  weekoffPresent: summary.weekoffPresent,
-                  totalPayableDays: summary.totalPayableDays,
-                }
-              );
+              console.log("✅ Fallback: weekoffPresent");
+              break;
+            default:
+              console.warn("⚠️ Unknown attendance type:", record.attendance);
               break;
           }
         }
 
-        // Handle early departure, late coming, and overtime
+        // =================================================================
+        // HANDLE OVERTIME, EARLY DEPARTURE, LATE COMING
+        // =================================================================
+
         if (record.earlyDeparture && record.earlyDeparture !== "00:00:00") {
           summary.earlyLeaving += 1;
-          console.log("🔍 Processed earlyDeparture, updated summary:", {
-            earlyLeaving: summary.earlyLeaving,
-          });
+          console.log("✅ Added earlyLeaving");
         }
+
         if (record.lateBy && record.lateBy !== "00:00:00") {
           summary.lateComing += 1;
-          console.log("🔍 Processed lateComing, updated summary:", {
-            lateComing: summary.lateComing,
-          });
+          console.log("✅ Added lateComing");
         }
+
         if (record.overTime && record.overTime !== "00:00:00") {
-          if (isPresent) {
+          // Determine OT category based on context
+          if (context === "Present") {
             summary.workingDayOT += 1;
-            console.log("🔍 Processed workingDayOT, updated summary:", {
-              workingDayOT: summary.workingDayOT,
-            });
-          } else if (isWeekoffPresent) {
-            summary.weekoffPresentOT += 1;
-            console.log("🔍 Processed weekoffPresentOT, updated summary:", {
-              weekoffPresentOT: summary.weekoffPresentOT,
-            });
-          } else if (isHolidayPresent) {
-            summary.holidayPresentOT += 1;
-            console.log("🔍 Processed holidayPresentOT, updated summary:", {
-              holidayPresentOT: summary.holidayPresentOT,
-            });
+            console.log("✅ Added workingDayOT");
           } else if (
-            record.attendanceContext === "WorkFromHome" ||
-            record.attendance === "workFromHome"
+            context === "WeeklyOff Present" ||
+            context.includes("WeeklyOff Present")
           ) {
+            summary.weekoffPresentOT += 1;
+            console.log("✅ Added weekoffPresentOT");
+          } else if (
+            context === "Holiday Present" ||
+            context.includes("Holiday Present")
+          ) {
+            summary.holidayPresentOT += 1;
+            console.log("✅ Added holidayPresentOT");
+          } else if (context === "Work From Home") {
             summary.workFromHomeOT += 1;
+            console.log("✅ Added workFromHomeOT");
           } else {
+            // Fallback based on record.attendance
             switch (record.attendance) {
               case "present":
                 summary.workingDayOT += 1;
@@ -2409,7 +2294,120 @@ module.exports = function registerEndpoint(router, { services }) {
               case "workFromHome":
                 summary.workFromHomeOT += 1;
                 break;
+              default:
+                summary.workingDayOT += 1;
+                break;
             }
+            console.log("✅ Added OT (fallback)");
+          }
+        }
+      }
+      // =================================================================
+      // HANDLE RECORDS WITHOUT attendanceContext
+      // =================================================================
+      else {
+        console.log(
+          "🔍 No attendanceContext, using record.attendance field:",
+          record.attendance
+        );
+
+        // Calculate day value
+        const dayValue =
+          record.day && !isNaN(record.day) ? Number.parseFloat(record.day) : 0;
+        let considerableDay = dayValue;
+        if (dayValue === 0.75) {
+          considerableDay = 1.0;
+        } else if (dayValue > 1) {
+          considerableDay = 1.0;
+        }
+
+        switch (record.attendance) {
+          case "present":
+            summary.present += considerableDay;
+            summary.totalPayableDays += considerableDay;
+            console.log("✅ No context: present");
+            break;
+          case "absent":
+            summary.absent += considerableDay;
+            console.log("✅ No context: absent");
+            break;
+          case "weekOff":
+            summary.weekOff += 1;
+            summary.totalPayableDays += includeWeekoffs ? 1 : 0;
+            console.log("✅ No context: weekOff");
+            break;
+          case "holiday":
+            summary.holiday += 1;
+            summary.totalPayableDays += includeHolidays ? 1 : 0;
+            console.log("✅ No context: holiday");
+            break;
+          case "onDuty":
+            summary.onDuty += considerableDay;
+            summary.totalPayableDays += considerableDay;
+            console.log("✅ No context: onDuty");
+            break;
+          case "workFromHome":
+            summary.workFromHome += considerableDay;
+            summary.totalPayableDays += considerableDay;
+            console.log("✅ No context: workFromHome");
+            break;
+          case "halfDay":
+            summary.halfDay += considerableDay;
+            summary.present += considerableDay;
+            summary.absent += 1 - considerableDay;
+            summary.totalPayableDays += considerableDay;
+            console.log("✅ No context: halfDay");
+            break;
+          case "paidLeave":
+            summary.paidLeave += considerableDay;
+            summary.totalPayableDays += considerableDay;
+            console.log("✅ No context: paidLeave");
+            break;
+          case "unPaidLeave":
+            summary.unPaidLeave += considerableDay;
+            console.log("✅ No context: unPaidLeave");
+            break;
+          case "holidayPresent":
+            summary.holidayPresent += considerableDay;
+            summary.totalPayableDays += considerableDay;
+            console.log("✅ No context: holidayPresent");
+            break;
+          case "weekoffPresent":
+            summary.weekoffPresent += considerableDay;
+            summary.totalPayableDays += considerableDay;
+            console.log("✅ No context: weekoffPresent");
+            break;
+          default:
+            console.warn("⚠️ Unknown attendance type:", record.attendance);
+            break;
+        }
+
+        // Handle overtime, early departure, late coming
+        if (record.earlyDeparture && record.earlyDeparture !== "00:00:00") {
+          summary.earlyLeaving += 1;
+        }
+
+        if (record.lateBy && record.lateBy !== "00:00:00") {
+          summary.lateComing += 1;
+        }
+
+        if (record.overTime && record.overTime !== "00:00:00") {
+          switch (record.attendance) {
+            case "present":
+              summary.workingDayOT += 1;
+              break;
+            case "weekoffPresent":
+              summary.weekoffPresentOT += 1;
+              break;
+            case "holidayPresent":
+              summary.holidayPresentOT += 1;
+              break;
+            case "workFromHome":
+              summary.workFromHomeOT += 1;
+              break;
+            default:
+              summary.workingDayOT += 1;
+              break;
           }
         }
       }
@@ -2421,6 +2419,7 @@ module.exports = function registerEndpoint(router, { services }) {
   function getAllDatesInRange(startDate, endDate) {
     console.log("🚀 Entered getAllDatesInRange");
     console.log("🔍 Input parameters:", { startDate, endDate });
+    console.log("🚀 JesonLuna Starting /monthly-dashboard route");
 
     const dates = [];
     let currentDate = new Date(startDate);
