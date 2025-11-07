@@ -12,7 +12,9 @@ export default ({ action }, { services, database }) => {
     // Only run for tenant collection
     if (collection !== "tenant") return;
 
-    console.log("🏁 Heina Jeson Tenant created! Starting additional setup...");
+    console.log(
+      "🏁surthi Heina Jeson Tenant created! Starting additional setup..."
+    );
 
     const tenantId = key;
     let employeeId = null;
@@ -37,7 +39,7 @@ export default ({ action }, { services, database }) => {
     // === DYNAMIC AWS SDK LOADING (INSIDE ACTION) ===
     let s3 = null;
 
-    // ✅ Load from .env (secure way)
+    // Load from .env (secure way)
     const BUCKET = process.env.BUCKET;
     const ACCESS_KEY = process.env.ACCESS_KEY;
     const SECRET_KEY = process.env.SECRET_KEY;
@@ -58,134 +60,6 @@ export default ({ action }, { services, database }) => {
       );
     }
 
-    const cleanupResources = async (errorMessage) => {
-      console.log(
-        "🗑️ Cleaning up resources (except tenant and personalModule)..."
-      );
-      try {
-        // Delete tenant templates
-        for (const templateId of createdResources.tenantTemplates) {
-          try {
-            await new ItemsService("tenant_template", {
-              schema,
-              accountability,
-            }).deleteOne(templateId);
-          } catch (err) {
-            console.error(
-              `❌ Error deleting tenant template ${templateId}:`,
-              err
-            );
-          }
-        }
-        // Delete configs
-        for (const configId of createdResources.configs) {
-          try {
-            await new ItemsService("config", {
-              schema,
-              accountability,
-            }).deleteOne(configId);
-          } catch (err) {
-            console.error(`❌ Error deleting config ${configId}:`, err);
-          }
-        }
-        // Delete salary breakdown
-        if (createdResources.salaryBreakdown) {
-          try {
-            await new ItemsService("SalaryBreakdown", {
-              schema,
-              accountability,
-            }).deleteOne(createdResources.salaryBreakdown);
-          } catch (err) {
-            console.error(
-              `❌ Error deleting salary breakdown ${createdResources.salaryBreakdown}:`,
-              err
-            );
-          }
-        }
-        // Delete shift
-        if (createdResources.shift) {
-          try {
-            await new ItemsService("shifts", {
-              schema,
-              accountability,
-            }).deleteOne(createdResources.shift);
-          } catch (err) {
-            console.error(
-              `❌ Error deleting shift ${createdResources.shift}:`,
-              err
-            );
-          }
-        }
-        // Delete attendance cycle
-        if (createdResources.attendanceCycle) {
-          try {
-            await new ItemsService("attendanceCycle", {
-              schema,
-              accountability,
-            }).deleteOne(createdResources.attendanceCycle);
-          } catch (err) {
-            console.error(
-              `❌ Error deleting attendance cycle ${createdResources.attendanceCycle}:`,
-              err
-            );
-          }
-        }
-        // Delete leaves
-        if (createdResources.leaves) {
-          try {
-            await new ItemsService("leave", {
-              schema,
-              accountability,
-            }).deleteOne(createdResources.leaves);
-          } catch (err) {
-            console.error(
-              `❌ Error deleting leaves ${createdResources.leaves}:`,
-              err
-            );
-          }
-        }
-        // Delete folders in reverse order
-        const foldersByParent = {};
-        for (const folder of createdResources.folders) {
-          foldersByParent[folder.parent] = (
-            foldersByParent[folder.parent] || []
-          ).concat(folder);
-        }
-        const deleteQueue = [];
-        const visited = new Set();
-        const collectFoldersToDelete = (folderId) => {
-          if (visited.has(folderId)) return;
-          visited.add(folderId);
-          const children = foldersByParent[folderId] || [];
-          for (const child of children) collectFoldersToDelete(child.id);
-          deleteQueue.push(folderId);
-        };
-        const mainFolder = createdResources.folders.find((f) => !f.parent);
-        if (mainFolder) collectFoldersToDelete(mainFolder.id);
-        for (let i = deleteQueue.length - 1; i >= 0; i--) {
-          try {
-            await database("directus_folders")
-              .where("id", deleteQueue[i])
-              .del();
-          } catch (err) {
-            console.error(`❌ Error deleting folder ${deleteQueue[i]}:`, err);
-          }
-        }
-        await errorService.createOne({
-          tenantId,
-          employeeId: personalId || null,
-          failed_collection: "cleanup",
-          error_response: {
-            message: errorMessage.message || errorMessage,
-            stack: errorMessage.stack || new Error().stack,
-          },
-          pending_collections: pendingCollections,
-        });
-      } catch (cleanupErr) {
-        console.error("❌ Error during cleanup:", cleanupErr);
-      }
-    };
-
     // Wait for personal module
     const waitForPersonalModule = async () => {
       try {
@@ -197,7 +71,7 @@ export default ({ action }, { services, database }) => {
         // Initial attempt
         let personalItems = await personalService.readByQuery({
           filter: { assignedUser: { tenant: { _eq: tenantId } } },
-          fields: ["id", "employeeId"],
+          fields: ["id", "employeeId", "assignedUser.id"],
           limit: 1,
         });
 
@@ -214,7 +88,13 @@ export default ({ action }, { services, database }) => {
         for (let attempt = 1; attempt <= 2; attempt++) {
           personalItems = await personalService.readByQuery({
             filter: { assignedUser: { tenant: { _eq: tenantId } } },
-            fields: ["id", "employeeId"],
+            fields: [
+              "id",
+              "employeeId",
+              "assignedUser.id",
+              "assignedUser.tenant.tenantName",
+              "assignedUser.tenant.companyAddress",
+            ],
             limit: 1,
           });
 
@@ -259,12 +139,13 @@ export default ({ action }, { services, database }) => {
             "attendanceCycle",
             "shifts",
             "leave",
+            "organization",
             "SalaryBreakdown",
             "config",
             "tenant_template",
           ],
+          status: "failed",
         });
-        await cleanupResources(error);
         return;
       }
 
@@ -295,6 +176,7 @@ export default ({ action }, { services, database }) => {
           "Asserts",
           "Workorders",
           "rfidCard",
+          "Expense",
         ];
 
         const folderIds = {};
@@ -376,15 +258,19 @@ export default ({ action }, { services, database }) => {
           failed_collection: "directus_folders",
           error_response: { message: error.message, stack: error.stack },
           pending_collections: [
+            "directus_folders",
+            "roleConfigurator",
+            "salarySetting",
             "attendanceCycle",
             "shifts",
             "leave",
+            "organization",
             "SalaryBreakdown",
             "config",
             "tenant_template",
           ],
+          status: "failed",
         });
-        await cleanupResources(error);
         return;
       }
       pendingCollections.push("directus_folders");
@@ -436,11 +322,276 @@ export default ({ action }, { services, database }) => {
             failed_collection: "s3_device_config",
             error_response: { message: s3Err.message, stack: s3Err.stack },
             pending_collections: pendingCollections.slice(),
+            status: "failed",
           });
           // Continue — S3 is optional
         }
       } else {
         console.warn("AWS SDK not available — skipping S3 setup");
+      }
+
+      // === DEFAULT ROLE CONFIGURATORS (Admin + Employee) ===
+      let adminRoleId = null;
+      let employeeRoleId = null;
+
+      try {
+        const roleConfigService = new ItemsService("roleConfigurator", {
+          schema,
+          accountability,
+        });
+
+        // ---- ADMIN ROLE CONFIG ----
+        const adminPayload = {
+          roleName: "Admin",
+          status: "MainTenant",
+          description: "Tenant Admin",
+          assignedRole: "Admin",
+          parentId: "ea2303aa-1662-43ca-a7f7-ab84924a7e0a",
+          Level: 0,
+          tenant: tenantId,
+          Role_Access: {
+            client: { create: true, update: true, delete: true },
+            workorder: { create: true, update: true, delete: true },
+            assets: { create: true, update: true, delete: true },
+            attendance: { create: true, update: true, delete: true },
+            leave: { create: true, update: true, delete: true },
+            expense: { create: true, update: true, delete: true },
+            employee: { create: true, update: true, delete: true },
+          },
+          dataScope: {
+            client: "organization-wide",
+            workorder: "organization-wide",
+            assets: "organization-wide",
+            attendance: "organization-wide",
+            leave: "organization-wide",
+            expense: "organization-wide",
+            employee: "organization-wide",
+          },
+          tab_access: {
+            Overview: { Overview: true },
+            "Clients & Sites": { "Clients & Sites": true },
+            "Work Orders": { "Work Orders": true, smartforms: true },
+            Employees: {
+              Employees: true,
+              "All Employees Details": true,
+              "All Admin Details": true,
+              "Leave Details": true,
+              "Attendance Details": true,
+            },
+            Attendance: {
+              Attendance: true,
+              "Attendance Details": {
+                "Attendance Details": true,
+                "Live Attendance": true,
+                "Monthly Attendance": true,
+                "Daily Attendance": true,
+                "All In-Outs": true,
+              },
+            },
+            Expenses: { Expenses: true },
+            Requests: { Requests: true },
+            Payroll: {
+              Payroll: true,
+              "Payroll Details": {
+                "Payroll Details": true,
+                "Employee Salaries": true,
+                "Run Payroll": true,
+                "Additional Pay": true,
+              },
+            },
+            Reports: { Reports: true },
+            Configurator: {
+              Configurator: true,
+              "Organization Configurator": {
+                "Organization Configurator": true,
+                Branches: true,
+                Departments: true,
+                Teams: true,
+                "Admin Role": true,
+                "Employee Role": true,
+              },
+              "Attendance Configurator": {
+                "Attendance Configurator": true,
+                Shifts: true,
+                "Attendance Cycle": true,
+                Leaves: true,
+                Holidays: true,
+              },
+              "Expense Configurator": {
+                "Expense Configurator": true,
+                "Expense Categories": true,
+                "Expense Rule": true,
+              },
+              "Payroll Configurator": {
+                "Payroll Configurator": true,
+                "Payroll Policies": true,
+                "Penalty Policies": true,
+              },
+            },
+            "Organization Settings": { "Organization Settings": true },
+            "Subscription & Plans": { "Subscription & Plans": true },
+            Uploads: { Uploads: true },
+            Routes: { Routes: true },
+          },
+        };
+        adminRoleId = await roleConfigService.createOne(adminPayload);
+        createdResources.adminRoleConfig = adminRoleId;
+        console.log(`⏰Created Admin roleConfigurator id=${adminRoleId}`);
+
+        // ---- EMPLOYEE ROLE CONFIG ----
+        const employeePayload = {
+          roleName: "Employee",
+          status: "MainTenant",
+          description: "Tenant Employee",
+          assignedRole: "Employee",
+          parentId: "f667b169-c66c-4ec1-bef9-1831c1647c0d",
+          Level: 0,
+          tenant: tenantId,
+          Role_Access: {
+            attendance: { create: true, update: false, delete: false },
+            employee: { create: false, update: false, delete: false },
+            expense: { create: true, update: true, delete: true },
+            leave: { create: true, update: true, delete: true },
+            workorder: { create: true, update: true, delete: true },
+          },
+          dataScope: {
+            attendance: "assigned-only",
+            employee: "assigned-only",
+            expense: "assigned-only",
+            leave: "assigned-only",
+            workorder: "assigned-only",
+          },
+          tab_access: {
+            Attendance: {
+              Attendance: true,
+              "Attendance Details": {
+                "Attendance Details": true,
+                "Live Attendance": true,
+                "Daily Attendance": true,
+                "Monthly Attendance": true,
+                "All In-Outs": true,
+              },
+            },
+            "Clients & Sites": { "Clients & Sites": true },
+            Employees: {
+              Employees: true,
+              "All Employees Details": true,
+              "Leave Details": true,
+              "Attendance Details": true,
+            },
+            Expenses: { Expenses: true },
+            Requests: { Requests: true },
+            "Work Orders": { "Work Orders": true },
+          },
+        };
+
+        employeeRoleId = await roleConfigService.createOne(employeePayload);
+        createdResources.employeeRoleConfig = employeeRoleId;
+        console.log(`⏰Created Employee roleConfigurator id=${employeeRoleId}`);
+      } catch (error) {
+        console.error("❌Error creating default role configurators:", error);
+        await errorService.createOne({
+          tenantId,
+          employeeId: personalId || null,
+          failed_collection: "roleConfigurator",
+          error_response: { message: error.message, stack: error.stack },
+          pending_collections: [
+            "salarySetting",
+            "attendanceCycle",
+            "shifts",
+            "leave",
+            "organization",
+            "SalaryBreakdown",
+            "config",
+            "tenant_template",
+          ],
+          status: "failed",
+        });
+      }
+
+      // === DEFAULT SALARY SETTING (Custom) ===
+      try {
+        const salarySettingService = new ItemsService("salarySetting", {
+          schema,
+          accountability,
+        });
+
+        const salarySettingPayload = {
+          configName: "Custom",
+          basicPay: 100,
+          allowances: [],
+          earnings: [],
+          deductions: null,
+          professionalTax: null,
+          stateTaxes: null,
+          LWF: null,
+          adminCharges: { enable: false, charge: "0" },
+          employeeDeductions: {
+            EmployeePF: {
+              selectedOption: 1800,
+              options: [
+                { label: "No Value", value: null },
+                { label: "Minimum Amount", value: 1800 },
+                { label: "Percentage", value: 12 },
+              ],
+              Calculations: [{ name: "Basic Pay", percentage: 100 }],
+            },
+            EmployeeESI: {
+              selectedOption: 0.75,
+              options: [
+                { label: "No Value", value: null },
+                { label: "Percentage", value: 0.75 },
+              ],
+              Calculations: [{ name: "Basic Pay", percentage: 100 }],
+            },
+          },
+          employersContributions: {
+            EmployerPF: {
+              selectedOption: 1800,
+              withinCTC: false,
+              options: [
+                { label: "No Value", value: null },
+                { label: "Minimum Amount", value: 1800 },
+                { label: "Percentage", value: 12 },
+              ],
+              Calculations: [{ name: "Basic Pay", percentage: 100 }],
+            },
+            EmployerESI: {
+              selectedOption: 3.25,
+              withinCTC: false,
+              options: [
+                { label: "No Value", value: null },
+                { label: "Percentage", value: 3.25 },
+              ],
+              Calculations: [{ name: "Basic Pay", percentage: 100 }],
+            },
+          },
+          tenant: tenantId,
+        };
+
+        const salarySettingId = await salarySettingService.createOne(
+          salarySettingPayload
+        );
+        createdResources.salarySetting = salarySettingId;
+        console.log(`🧑‍💼Created salarySetting (Custom) id=${salarySettingId}`);
+      } catch (error) {
+        console.error("❌Error creating default salarySetting:", error);
+        await errorService.createOne({
+          tenantId,
+          employeeId: personalId || null,
+          failed_collection: "salarySetting",
+          error_response: { message: error.message, stack: error.stack },
+          pending_collections: [
+            "attendanceCycle",
+            "shifts",
+            "leave",
+            "organization",
+            "SalaryBreakdown",
+            "config",
+            "tenant_template",
+          ],
+          status: "failed",
+        });
       }
 
       // === ATTENDANCE CYCLE ===
@@ -493,12 +644,13 @@ export default ({ action }, { services, database }) => {
           pending_collections: [
             "shifts",
             "leave",
+            "organization",
             "SalaryBreakdown",
             "config",
             "tenant_template",
           ],
+          status: "failed",
         });
-        await cleanupResources(error);
         return;
       }
       pendingCollections.push("attendanceCycle");
@@ -532,12 +684,13 @@ export default ({ action }, { services, database }) => {
           error_response: { message: error.message, stack: error.stack },
           pending_collections: [
             "leave",
+            "organization",
             "SalaryBreakdown",
             "config",
             "tenant_template",
           ],
+          status: "failed",
         });
-        await cleanupResources(error);
         return;
       }
       pendingCollections.push("shifts");
@@ -571,15 +724,70 @@ export default ({ action }, { services, database }) => {
           employeeId: personalId || null,
           failed_collection: "leave",
           error_response: { message: error.message, stack: error.stack },
-          pending_collections: ["SalaryBreakdown", "config", "tenant_template"],
+          pending_collections: [
+            "organization",
+            "SalaryBreakdown",
+            "config",
+            "tenant_template",
+          ],
+          status: "failed",
         });
-        await cleanupResources(error);
         return;
       }
       pendingCollections.push("leave");
 
+      // === CREATE ORGANIZATION FROM TENANT PAYLOAD ===
+      try {
+        const tenantPayload = meta.payload || {};
+        const companyName = tenantPayload.tenantName || "";
+        let companyAddress = tenantPayload.companyAddress || "";
+        if (typeof companyAddress === "string") {
+          companyAddress = companyAddress.replace(/^"+|"+$/g, "").trim();
+        }
+
+        const organizationService = new ItemsService("organization", {
+          schema,
+          accountability,
+        });
+
+        const organizationPayload = {
+          orgName: companyName,
+          orgType: "maintenant",
+          orgAddress: companyAddress,
+          tenant: tenantId,
+        };
+
+        const orgData = await organizationService.createOne(
+          organizationPayload
+        );
+        const orgId = orgData.id || orgData;
+        createdResources.organization = orgId;
+
+        console.log(
+          `## Organization created: { id: ${orgId}, name: "${companyName}", address: "${companyAddress}" }`
+        );
+      } catch (error) {
+        console.error("Failed to create organization:", error);
+        await errorService.createOne({
+          tenantId,
+          employeeId: personalId || null,
+          failed_collection: "organization",
+          error_response: { message: error.message, stack: error.stack },
+          pending_collections: ["config", "tenant_template"],
+          status: "failed",
+        });
+      }
+
       // === PATCH PERSONAL MODULE ===
       try {
+        if (!adminRoleId) {
+          throw new Error(
+            "adminRoleId is missing — cannot patch personalModule"
+          );
+        }
+
+        const personalItem = await waitForPersonalModule();
+        const assignedUserId = personalItem.assignedUser.id;
         const personalService = new ItemsService("personalModule", {
           schema,
           accountability,
@@ -590,26 +798,30 @@ export default ({ action }, { services, database }) => {
           cycleType: 1,
           uniqueId: `${tenantId}-${employeeId}`,
           attendanceSettings: {
-            isMonday: false,
+            isMonday: true,
             monJ: { shifts: [shiftId] },
-            isTuesday: false,
+            isTuesday: true,
             tueJ: { shifts: [shiftId] },
-            isWednesday: false,
+            isWednesday: true,
             wedJ: { shifts: [shiftId] },
-            isThursday: false,
+            isThursday: true,
             thuJ: { shifts: [shiftId] },
-            isFriday: false,
+            isFriday: true,
             friJ: { shifts: [shiftId] },
-            isSaturday: false,
+            isSaturday: true,
             satJ: { shifts: [shiftId] },
             isSunday: true,
             sunJ: { shifts: [] },
           },
           leaves: leavesId,
+          assignedUser: {
+            id: assignedUserId,
+            roleConfig: adminRoleId,
+          },
         };
         await personalService.updateOne(personalId, personalUpdatePayload);
         console.log(
-          `🧑‍💼 Patched personalModule: { id: ${personalId}, uniqueId: ${personalUpdatePayload.uniqueId}, leaves: ${leavesId} }`
+          `🧑‍💼 Patched personalModule: { id: ${personalId}, uniqueId: ${personalUpdatePayload.uniqueId}, leaves: ${leavesId}, roleConfig: ${adminRoleId} }`
         );
       } catch (error) {
         console.error("❌ Error patching personal module:", error);
@@ -619,8 +831,8 @@ export default ({ action }, { services, database }) => {
           failed_collection: "personalModule",
           error_response: { message: error.message, stack: error.stack },
           pending_collections: ["SalaryBreakdown", "config", "tenant_template"],
+          status: "failed",
         });
-        await cleanupResources(error);
         return;
       }
 
@@ -647,8 +859,8 @@ export default ({ action }, { services, database }) => {
           failed_collection: "SalaryBreakdown",
           error_response: { message: error.message, stack: error.stack },
           pending_collections: ["config", "tenant_template"],
+          status: "failed",
         });
-        await cleanupResources(error);
         return;
       }
       pendingCollections.push("SalaryBreakdown");
@@ -685,8 +897,8 @@ export default ({ action }, { services, database }) => {
             failed_collection: "config",
             error_response: { message: error.message, stack: error.stack },
             pending_collections: ["tenant_template"],
+            status: "failed",
           });
-          await cleanupResources(error);
           return;
         }
       }
@@ -722,7 +934,7 @@ export default ({ action }, { services, database }) => {
           );
           createdResources.tenantTemplates.push(tenantTemplateId);
           console.log(
-            `📄 Created tenant_template: { id: ${tenantTemplateId}, formName: ${template.formName}, tenant: ${tenantId} }`
+            `Created tenant_template: { id: ${tenantTemplateId}, formName: ${template.formName}, tenant: ${tenantId} }`
           );
         }
         console.log(
@@ -739,25 +951,35 @@ export default ({ action }, { services, database }) => {
           failed_collection: "tenant_template",
           error_response: { message: error.message, stack: error.stack },
           pending_collections: [],
+          status: "failed",
         });
-        await cleanupResources(error);
         return;
       }
       pendingCollections.push("tenant_template");
 
+      // === FINAL SUCCESS LOG ===
       console.log(
         `🎉 All resources created successfully for tenant: ${tenantId}`
       );
+      await errorService.createOne({
+        tenantId,
+        employeeId: personalId || null,
+        failed_collection: null,
+        error_response: null,
+        pending_collections: ["NO Pending"],
+        message: "All resources created successfully",
+        status: "success",
+      });
     } catch (error) {
-      console.error("❌ Unexpected error in hook:", error);
+      console.error("Unexpected error in hook:", error);
       await errorService.createOne({
         tenantId,
         employeeId: personalId || null,
         failed_collection: "unknown",
         error_response: { message: error.message, stack: error.stack },
         pending_collections: pendingCollections,
+        status: "failed",
       });
-      await cleanupResources(error);
     }
   });
 };
