@@ -4,217 +4,1226 @@ function getDefaultExportFromCjs(x) {
     : x;
 }
 
+// ==================== UTILITY FUNCTIONS ====================
+
+function getYearMonth(date) {
+  const d = new Date(date);
+  return {
+    year: String(d.getFullYear()),
+    month: String(d.getMonth() + 1).padStart(2, "0"),
+  };
+}
+
+function findNearestPreviousMonth(dataByYear, targetYear, targetMonth) {
+  if (!dataByYear[targetYear]) return null;
+
+  const availableMonths = Object.keys(dataByYear[targetYear])
+    .map(Number)
+    .filter((m) => m <= Number(targetMonth))
+    .sort((a, b) => b - a);
+
+  if (availableMonths.length === 0) return null;
+
+  const nearestMonth = String(availableMonths[0]).padStart(2, "0");
+  return dataByYear[targetYear][nearestMonth];
+}
+
+// ==================== VALIDATION FUNCTIONS ====================
+
+function validateQueryParameters(query) {
+  const { startDate, endDate, totalDays } = query;
+
+  if (!startDate || !endDate) {
+    return {
+      valid: false,
+      error: "startDate and endDate are required in query parameters",
+    };
+  }
+
+  if (!totalDays) {
+    return { valid: false, error: "totalDays is required in query parameters" };
+  }
+
+  return { valid: true };
+}
+
+function extractEmployeeIds(query) {
+  if (query.filter?.employeeIds?._in) {
+    const ids = query.filter.employeeIds._in.split(",").map((id) => id.trim());
+    return ids.length
+      ? { valid: true, ids }
+      : { valid: false, error: "Employee IDs required" };
+  }
+  return {
+    valid: false,
+    error: "Employee IDs required in filter[employeeIds][_in] parameter",
+  };
+}
+
+// ==================== DATA FETCHING FUNCTIONS ====================
+
+async function fetchPersonalModuleData(ItemsService, req, employeeIds) {
+  const personalModuleService = new ItemsService("personalModule", {
+    schema: req.schema,
+    accountability: req.accountability,
+  });
+
+  return await personalModuleService.readByQuery({
+    filter: { id: { _in: employeeIds } },
+    fields: [
+      "id",
+      "employeeId",
+      "assignedUser.first_name",
+      "assignedUser.gender",
+      "assignedUser.PFAccountNumber",
+      "assignedUser.ESIAccountNumber",
+      "config.attendancePolicies",
+      "config.attendancePolicies.LateCommingDayMode",
+      "config.attendancePolicies.earlyExitAllowed",
+      "config.attendancePolicies.earlyLeavingDayMode",
+      "config.attendancePolicies.earlyLeavingType",
+      "config.attendancePolicies.entryTimeLimit",
+      "config.attendancePolicies.exitTimeLimit",
+      "config.attendancePolicies.isOverTime",
+      "config.attendancePolicies.isWorkingHours",
+      "config.attendancePolicies.lateComingType",
+      "config.attendancePolicies.lateEntryAllowed",
+      "config.attendancePolicies.lateEntryPenaltyAmt",
+      "config.attendancePolicies.locationCentric",
+      "config.attendancePolicies.setEntryTimeLimit",
+      "config.attendancePolicies.setExitTimeLimit",
+      "config.attendancePolicies.setMinWorkingHours",
+      "config.attendancePolicies.setOverTimeLimit",
+      "config.attendancePolicies.workingHoursType",
+      "config.attendancePolicies.workingHoursAmount",
+      "config.attendancePolicies.wrkHoursDayMode",
+      "config.attendancePolicies.workinghrsDaysLimit",
+      "config.attendancePolicies.earlyExitPenaltyAmt",
+      "config.attendancePolicies.extraHoursPay",
+      "config.attendancePolicies.weekOffPay",
+      "config.attendancePolicies.publicHolidayPay",
+      "config.attendancePolicies.weekOffType",
+      "config.attendancePolicies.publicHolidayType",
+      "config.attendancePolicies.extraHoursType",
+      "config.attendanceSettings",
+      "assignedUser.pfTracking",
+      "assignedUser.esiTracking",
+      "salaryConfigTracking",
+    ],
+    sort: ["-date_updated"],
+    limit: -1,
+  });
+}
+
+async function fetchSalaryBreakdown(ItemsService, req, employeeIds) {
+  const salaryBreakdownService = new ItemsService("SalaryBreakdown", {
+    schema: req.schema,
+    accountability: req.accountability,
+  });
+
+  return await salaryBreakdownService.readByQuery({
+    filter: { employee: { _in: employeeIds } },
+    fields: [
+      "ctc",
+      "employee.id",
+      "employee.employeeId",
+      "basicSalary",
+      "basicPay",
+      "earnings",
+      "employersContribution",
+      "employeeDeduction",
+      "individualDeduction",
+      "voluntaryPF",
+      "salaryArrears",
+      "totalEarnings",
+      "deduction",
+      "totalDeductions",
+      "netSalary",
+      "professionalTax",
+      "LWF",
+      "PT",
+      "employerLwf",
+      "employeeLwf",
+      "employeradmin",
+      "anualEarnings",
+      "annualDeduction",
+      "bonus",
+      "incentive",
+      "retentionPay",
+      "loanDebit",
+      "loanCredit",
+      "advance",
+      "id",
+      "salaryTracking",
+    ],
+    limit: -1,
+  });
+}
+
+async function fetchPayrollVerification(
+  ItemsService,
+  req,
+  employeeIds,
+  startDate,
+  endDate
+) {
+  const payrollVerificationService = new ItemsService("payrollVerification", {
+    schema: req.schema,
+    accountability: req.accountability,
+  });
+
+  return await payrollVerificationService.readByQuery({
+    filter: {
+      employee: { id: { _in: employeeIds } },
+      startDate: {
+        _between: [
+          new Date(startDate).toISOString(),
+          new Date(endDate).toISOString(),
+        ],
+      },
+    },
+    fields: ["payableDays", "employee.id", "id", "totalAttendanceCount"],
+    limit: -1,
+  });
+}
+
+// ==================== NEW: STATE TAX RULES FETCHING ====================
+
+async function fetchStateTaxRules(ItemsService, req, stateIds) {
+  const idsForFilter = Array.isArray(stateIds)
+    ? Array.isArray(stateIds[0])
+      ? stateIds.flat()
+      : stateIds
+    : [stateIds];
+
+  if (idsForFilter.length === 0) return {};
+
+  const service = new ItemsService("tax", {
+    schema: req.schema,
+    accountability: req.accountability,
+  });
+
+  const records = await service.readByQuery({
+    filter: { id: { _in: idsForFilter } },
+    fields: ["id", "stateTaxRules"],
+    limit: -1,
+  });
+
+  // ✅ ONLY THIS
+  console.log(
+    "[fetchStateTaxRules] Response records:",
+    JSON.stringify(records, null, 2)
+  );
+
+  return JSON.stringify(records, null, 2);
+}
+
+// LWF ID
+function extractStateIdFromBreakdown(salaryBreakdown, endDate, field = "LWF") {
+  // ADD NULL CHECK
+  if (!salaryBreakdown?.[field] || salaryBreakdown[field] === null) {
+    return null;
+  }
+
+  const { year, month } = getYearMonth(endDate);
+
+  const data =
+    salaryBreakdown[field][year]?.[month] ||
+    findNearestPreviousMonth(salaryBreakdown[field], year, month) ||
+    {};
+
+  return data.state ?? null;
+}
+// ==================== NEW: PT & LWF FROM RULES ====================
+
+// ==================== UPDATED: calculatePTFromRules & getLWFFromRules ====================
+
+// REPLACE THE ENTIRE FUNCTION:
+function calculatePTFromRules(stateTaxRules, gender, monthlyCtc, currentMonth) {
+  console.log(
+    `[calculatePTFromRules] INPUT - gender: ${gender}, monthlyCtc: ${monthlyCtc}, month: ${currentMonth}`
+  ); // CHANGED
+  console.log(
+    `[calculatePTFromRules] stateTaxRules structure:`,
+    JSON.stringify(stateTaxRules, null, 2)
+  ); // ADD THIS
+
+  // CHANGED: Extract PT array from the rules object
+  const ptArray = stateTaxRules?.PT || [];
+
+  console.log(
+    `[calculatePTFromRules] Extracted PT array (${ptArray.length} rules):`,
+    JSON.stringify(ptArray, null, 2)
+  ); // ADD THIS
+
+  if (!ptArray.length || monthlyCtc == null) {
+    console.log(
+      `[calculatePTFromRules] ❌ No PT array or invalid CTC - returning 0`
+    ); // CHANGED
+    return 0;
+  }
+
+  // Filter by gender
+  const candidates = gender
+    ? ptArray.filter((r) => r.gender?.toLowerCase() === gender.toLowerCase())
+    : ptArray.filter((r) => !r.gender);
+
+  console.log(
+    `[calculatePTFromRules] Gender filter (${gender}) → ${candidates.length} candidates:`,
+    JSON.stringify(candidates, null, 2)
+  ); // CHANGED
+
+  // Find matching salary range
+  const rule = candidates.find((r) => {
+    const match = r.salaryRange.match(/(\d+)?\s*-?\s*(\d+)?\s*(and above)?/i);
+    if (!match) {
+      console.log(
+        `[calculatePTFromRules] ⚠️ Invalid range format: "${r.salaryRange}"`
+      ); // ADD THIS
+      return false;
+    }
+
+    const low = match[1] ? Number(match[1]) : 0;
+    const high = match[2] ? Number(match[2]) : Infinity;
+    const above = !!match[3];
+
+    const isMatch = above
+      ? monthlyCtc >= low
+      : monthlyCtc >= low && monthlyCtc <= high;
+    console.log(
+      `[calculatePTFromRules] Range "${
+        r.salaryRange
+      }": low=${low}, high=${high}, CTC=${monthlyCtc} → ${
+        isMatch ? "✅ MATCH" : "❌"
+      }`
+    ); // CHANGED
+    return isMatch;
+  });
+
+  const amount = rule?.professionalTax || 0;
+  console.log(
+    `[calculatePTFromRules] ✅ FINAL RESULT:`,
+    rule
+      ? `Rule matched: ${rule.salaryRange} → PT = ${amount}`
+      : `No rule matched → PT = 0`
+  ); // CHANGED
+  return amount;
+}
+
+function getLWFFromBreakdown(salaryBreakdown, endDate, stateTaxRulesById) {
+  const { year, month } = getYearMonth(endDate);
+
+  // ADD NULL CHECK
+  if (!salaryBreakdown?.LWF || salaryBreakdown.LWF === null) {
+    return { employerLWF: 0, employeeLWF: 0, state: null };
+  }
+
+  const storedExact =
+    salaryBreakdown.LWF[year]?.[month] ||
+    findNearestPreviousMonth(salaryBreakdown.LWF, year, month) ||
+    {};
+
+  const storedStateId = storedExact.state ?? null;
+  const stored = {
+    employerLWF: storedExact.employer || 0,
+    employeeLWF: storedExact.employee || 0,
+    state: storedStateId,
+  };
+
+  const normalizedStateId = storedStateId ? Number(storedStateId) : null;
+
+  console.log(
+    `[getLWFFromBreakdown] storedStateId: ${storedStateId}, normalizedStateId: ${normalizedStateId}`
+  ); // ADD THIS
+
+  if (
+    normalizedStateId &&
+    !isNaN(normalizedStateId) &&
+    stateTaxRulesById[normalizedStateId]
+  ) {
+    const rules = stateTaxRulesById[normalizedStateId];
+    console.log(
+      `[getLWFFromBreakdown] Found rules for state ${normalizedStateId}:`,
+      JSON.stringify(rules, null, 2)
+    ); // ADD THIS
+    return getLWFFromRules(rules, endDate); // CHANGED: Pass endDate
+  }
+
+  console.log(
+    `[getLWFFromBreakdown] No rules found, returning stored values:`,
+    stored
+  ); // ADD THIS
+  return stored;
+}
+// REPLACE THE ENTIRE FUNCTION
+
+function getLWFFromRules(stateTaxRules, startDate, endDate) {
+  console.log(
+    `[getLWFFromRules] Input rules:`,
+    JSON.stringify(stateTaxRules, null, 2)
+  );
+  console.log(`[getLWFFromRules] Date range: ${startDate} to ${endDate}`); // ADD THIS
+
+  if (!stateTaxRules?.LWF) {
+    console.log(`[getLWFFromRules] No LWF in rules`); // ADD THIS
+    return { employerLWF: 0, employeeLWF: 0, state: null };
+  }
+
+  const lwfData = stateTaxRules.LWF;
+  // REPLACE the date checking logic:
+  const deductionDates = lwfData.Deduction || [];
+
+  console.log(
+    `[getLWFFromRules] Deduction dates:`,
+    deductionDates,
+    `| startDate: ${startDate}, endDate: ${endDate}`
+  ); // CHANGED
+
+  let isWithinDeductionPeriod = false;
+
+  if (deductionDates.length === 2) {
+    const [startDeduction, endDeduction] = deductionDates;
+
+    // Parse dates (format: "DD-MM")
+    const [startDay, startMonth] = startDeduction.split("-").map(Number);
+    const [endDay, endMonth] = endDeduction.split("-").map(Number);
+
+    // CHANGED: Use both startDate and endDate from parameters
+    const payrollStart = new Date(startDate);
+    const payrollEnd = new Date(endDate);
+    const year = payrollEnd.getFullYear();
+
+    const rangeStart = new Date(year, startMonth - 1, startDay);
+    const rangeEnd = new Date(year, endMonth - 1, endDay);
+
+    console.log(
+      `[getLWFFromRules] Payroll period: ${
+        payrollStart.toISOString().split("T")[0]
+      } to ${payrollEnd.toISOString().split("T")[0]}`
+    ); // ADD THIS
+    console.log(
+      `[getLWFFromRules] LWF deduction period: ${
+        rangeStart.toISOString().split("T")[0]
+      } to ${rangeEnd.toISOString().split("T")[0]}`
+    ); // ADD THIS
+
+    // CHANGED: Check if payroll period overlaps with deduction period
+    isWithinDeductionPeriod =
+      payrollStart <= rangeEnd && payrollEnd >= rangeStart;
+  }
+
+  console.log(
+    `[getLWFFromRules] Is within deduction period: ${isWithinDeductionPeriod}`
+  );
+
+  if (!isWithinDeductionPeriod) {
+    console.log(`[getLWFFromRules] Not in deduction period, returning 0`); // ADD THIS
+    return {
+      employerLWF: 0,
+      employeeLWF: 0,
+      state: stateTaxRules.stateId ?? null,
+    };
+  }
+
+  const employerLWF = lwfData.EmployerLWF || 0;
+  const employeeLWF = lwfData.EmployeeLWF || 0;
+
+  console.log(
+    `[getLWFFromRules] Returning LWF: Employer=${employerLWF}, Employee=${employeeLWF}`
+  ); // ADD THIS
+
+  return {
+    employerLWF: employerLWF,
+    employeeLWF: employeeLWF,
+    state: stateTaxRules.stateId ?? null,
+  };
+}
+// MONTHLY CTC
+function getMonthlyCTCFromTracking(salaryTracking, endDate) {
+  const { year, month } = getYearMonth(endDate);
+
+  // Try to find exact month match
+  const monthKey = `${month}/${year}`;
+  if (salaryTracking?.[monthKey]) {
+    return Number(salaryTracking[monthKey]);
+  }
+
+  // If no exact match, find nearest previous month
+  if (!salaryTracking) return 0;
+
+  const entries = Object.entries(salaryTracking)
+    .map(([key, value]) => {
+      const [m, y] = key.split("/");
+      return {
+        year: y,
+        month: m.padStart(2, "0"),
+        value: Number(value),
+        date: new Date(`${y}-${m.padStart(2, "0")}-01`),
+      };
+    })
+    .filter((entry) => entry.date <= new Date(`${year}-${month}-01`))
+    .sort((a, b) => b.date - a.date);
+
+  return entries.length > 0 ? entries[0].value : 0;
+}
+// ==================== EARNINGS & DEDUCTIONS FROM SALARY BREAKDOWN ====================
+
+function getEarningsFromBreakdown(salaryBreakdown, endDate) {
+  const { year, month } = getYearMonth(endDate);
+
+  const earnings =
+    salaryBreakdown?.earnings?.[year]?.[month] ||
+    findNearestPreviousMonth(salaryBreakdown?.earnings, year, month) ||
+    {};
+
+  return earnings;
+}
+
+function getDeductionsFromBreakdown(salaryBreakdown, endDate) {
+  const { year, month } = getYearMonth(endDate);
+
+  const deductions =
+    salaryBreakdown?.deduction?.[year]?.[month] ||
+    findNearestPreviousMonth(salaryBreakdown?.deduction, year, month) ||
+    {};
+
+  return deductions;
+}
+
+function getEmployeeDeductionsFromBreakdown(salaryBreakdown, endDate) {
+  const { year, month } = getYearMonth(endDate);
+
+  const monthlyData =
+    salaryBreakdown?.employeeDeduction?.[year]?.[month] ||
+    findNearestPreviousMonth(salaryBreakdown?.employeeDeduction, year, month) ||
+    {};
+
+  const fallback = {
+    EmployeePF: salaryBreakdown?.employeeDeduction?.EmployeePF || 0,
+    EmployeeESI: salaryBreakdown?.employeeDeduction?.EmployeeESI || 0,
+    VoluntaryPF: salaryBreakdown?.employeeDeduction?.VoluntaryPF || 0,
+  };
+
+  const earningsData =
+    salaryBreakdown?.earnings?.[year]?.[month] ||
+    findNearestPreviousMonth(salaryBreakdown?.earnings, year, month) ||
+    {};
+
+  const resolveCalculationAmount = (config) => {
+    if (!config?.Calculations || !Array.isArray(config.Calculations)) return 0;
+
+    let total = 0;
+    config.Calculations.forEach((compName) => {
+      const amount = earningsData[compName];
+      if (typeof amount === "number") {
+        total += amount;
+      }
+    });
+    return total;
+  };
+
+  // Calculate Employee PF
+  const pfConfig = monthlyData.EmployeePF || {};
+  let employeePF = 0;
+  let employeePFBase = 0; // ADD THIS
+  const pfConfigData = {};
+  if (pfConfig.selectedOption != null) {
+    const baseAmount = resolveCalculationAmount(pfConfig);
+    employeePFBase = baseAmount; // ADD THIS
+    Object.assign(pfConfigData, pfConfig);
+    if (pfConfig.selectedOption === 1800) {
+      employeePF = Math.min(baseAmount * 0.12, 1800);
+    } else if (pfConfig.selectedOption === 12) {
+      const percentage = 12 / 100;
+      employeePF = baseAmount * percentage;
+    }
+  } else {
+    employeePF = fallback.EmployeePF;
+  }
+
+  // Calculate Employee ESI
+  const esiConfig = monthlyData.EmployeeESI || {};
+  let employeeESI = 0;
+  let employeeESIBase = 0; // ADD THIS
+  const esiConfigData = {};
+  if (esiConfig.selectedOption === 0.75) {
+    const baseAmount = resolveCalculationAmount(esiConfig);
+    employeeESIBase = baseAmount; // ADD THIS
+    Object.assign(esiConfigData, esiConfig);
+    const percentage = 0.75 / 100;
+    employeeESI = baseAmount * percentage;
+  } else {
+    employeeESI = fallback.EmployeeESI;
+  }
+
+  const voluntaryPF = monthlyData.VoluntaryPF ?? fallback.VoluntaryPF;
+
+  return {
+    employeePF: Math.round(employeePF),
+    employeePFBase: Math.round(employeePFBase), // ADD THIS
+    employeePFConfig: pfConfigData,
+    employeeESI: Math.round(employeeESI),
+    employeeESIBase: Math.round(employeeESIBase), // ADD THIS
+    employeeESIConfig: esiConfigData,
+    voluntaryPF: Math.round(voluntaryPF),
+  };
+}
+
+function getEmployerContributionsFromBreakdown(salaryBreakdown, endDate) {
+  const { year, month } = getYearMonth(endDate);
+
+  const monthlyData =
+    salaryBreakdown?.employersContribution?.[year]?.[month] ||
+    findNearestPreviousMonth(
+      salaryBreakdown?.employersContribution,
+      year,
+      month
+    ) ||
+    {};
+
+  const earningsData =
+    salaryBreakdown?.earnings?.[year]?.[month] ||
+    findNearestPreviousMonth(salaryBreakdown?.earnings, year, month) ||
+    {};
+
+  const resolveCalculationAmount = (config) => {
+    if (!config?.Calculations || !Array.isArray(config.Calculations)) return 0;
+
+    let total = 0;
+    config.Calculations.forEach((compName) => {
+      const amount = earningsData[compName];
+      if (typeof amount === "number") {
+        total += amount;
+      }
+    });
+    return total;
+  };
+
+  // Calculate Employer PF
+  const pfConfig = monthlyData.EmployerPF || {};
+  let employerPF = { amount: 0, baseAmount: 0, includedInCTC: false }; // ADD baseAmount
+
+  if (pfConfig.selectedOption != null) {
+    const baseAmount = resolveCalculationAmount(pfConfig);
+    let calculated = 0;
+
+    if (pfConfig.selectedOption === 1800) {
+      calculated = Math.min(baseAmount * 0.12, 1800);
+    } else if (pfConfig.selectedOption === 12) {
+      const percentage = 12 / 100;
+      calculated = baseAmount * percentage;
+    }
+
+    employerPF = {
+      amount: Math.round(calculated),
+      baseAmount: Math.round(baseAmount), // ADD THIS
+      includedInCTC:
+        pfConfig.withinCTC === "true" || pfConfig.withinCTC === true, // FIX THIS
+    };
+  }
+
+  // Calculate Employer ESI
+  const esiConfig = monthlyData.EmployerESI || {};
+  let employerESI = { amount: 0, baseAmount: 0, includedInCTC: false }; // ADD baseAmount
+
+  if (esiConfig.selectedOption === 3.25) {
+    const baseAmount = resolveCalculationAmount(esiConfig);
+    const percentage = 3.25 / 100;
+    const calculated = baseAmount * percentage;
+
+    employerESI = {
+      amount: Math.round(calculated),
+      baseAmount: Math.round(baseAmount), // ADD THIS
+      includedInCTC:
+        esiConfig.withinCTC === "true" || esiConfig.withinCTC === true, // FIX THIS
+    };
+  }
+
+  return {
+    employerPF,
+    employerESI,
+  };
+}
+
+// ==================== ADJUSTMENT FOR PAYABLE DAYS ====================
+
+function adjustAmountsForPayableDays(amounts, totalDays, payableDays) {
+  const adjusted = {};
+  const ratio = payableDays / Number(totalDays);
+
+  for (const [key, value] of Object.entries(amounts)) {
+    if (typeof value === "object" && value !== null && "Amount" in value) {
+      if (value.Condition === "On Attendance") {
+        adjusted[key] = value.Amount * ratio;
+      } else {
+        adjusted[key] = value.Amount;
+      }
+    } else {
+      adjusted[key] = value * ratio;
+    }
+  }
+
+  return adjusted;
+}
+
+// ==================== ADMIN CHARGE CALCULATION ====================
+
+function calculateAdminChargeFromBreakdown(employerContributions, adminConfig) {
+  if (!adminConfig?.selectedOption) {
+    return { name: "AdminCharge", rupee: 0 };
+  }
+
+  const employerPFAmount = employerContributions.employerPF.amount;
+  const chargeValue = adminConfig.Calculations;
+
+  let calculated = 0;
+
+  if (chargeValue === "1") {
+    calculated = (1 / 100) * employerPFAmount;
+  }
+  return {
+    name: "AdminCharge",
+    rupee: Math.round(Math.min(calculated, 150)),
+  };
+}
+
+// ==================== SPECIAL DEDUCTIONS & EARNINGS ====================
+
+function extractOtherDeductions(salaryBreakdown, endDate) {
+  const { year, month } = getYearMonth(endDate);
+  const otherDeductions = {};
+
+  if (salaryBreakdown?.individualDeduction) {
+    const deductionsForMonth =
+      salaryBreakdown.individualDeduction?.[year]?.[month] || {};
+
+    Object.entries(deductionsForMonth).forEach(([key, deduction]) => {
+      if (key !== "totalAmount") {
+        otherDeductions[deduction.name] = deduction.amount;
+      }
+    });
+  }
+
+  return otherDeductions;
+}
+
+function extractMonthlyAmount(data, endDate, key = "totalAmount") {
+  const { year, month } = getYearMonth(endDate);
+  const amounts = {};
+
+  if (data) {
+    const monthData = data?.[year]?.[month] || {};
+
+    Object.entries(monthData).forEach(([k, value]) => {
+      if (k === key) {
+        amounts[key] = value;
+      }
+    });
+  }
+
+  return amounts;
+}
+
+function extractSalaryArrears(salaryBreakdown, endDate) {
+  const { year, month } = getYearMonth(endDate);
+  const pendingEarnings = {};
+  let totalAmount = 0;
+
+  if (salaryBreakdown?.salaryArrears) {
+    const arrearsForMonth =
+      salaryBreakdown.salaryArrears?.[year]?.[month] || {};
+
+    Object.entries(arrearsForMonth).forEach(([key, arrear]) => {
+      if (key !== "totalAmount") {
+        const amount = parseFloat(arrear.amount || 0);
+        pendingEarnings[arrear.name] = amount;
+        totalAmount += amount;
+      }
+    });
+  }
+
+  return { pendingEarnings, totalAmount };
+}
+
+function extractBonusIncentiveDetails(salaryBreakdown, endDate) {
+  const { year, month } = getYearMonth(endDate);
+
+  const extractDetails = (data) => {
+    return (
+      (data?.[year]?.[month] &&
+        Object.entries(data[year][month])
+          .filter(([key]) => key !== "totalAmount")
+          .map(([, value]) => ({
+            reason: value.reason,
+            amount: value.amount,
+          }))) ||
+      []
+    );
+  };
+
+  return {
+    bonusDetails: extractDetails(salaryBreakdown?.bonus),
+    incentiveDetails: extractDetails(salaryBreakdown?.incentive),
+    retentionDetails: extractDetails(salaryBreakdown?.retentionPay),
+  };
+}
+
+// ==================== ATTENDANCE PENALTIES & OT ====================
+
+function calculateLateEntryPenalty(
+  attendancePolicy,
+  totalAttendanceCount,
+  perHourSalary
+) {
+  if (attendancePolicy?.lateComingType !== "fixed") return 0;
+
+  const penaltyAmount = Number(attendancePolicy.lateEntryPenaltyAmt || 0);
+  const hoursOnly = Number(
+    (totalAttendanceCount?.totalLateDuration || "0:0").split(":")[0]
+  );
+
+  if (attendancePolicy.lateComingDayMode === "Custom Multiplier") {
+    return penaltyAmount * perHourSalary * hoursOnly;
+  }
+  return penaltyAmount * hoursOnly;
+}
+
+function calculateEarlyLeavingPenalty(
+  attendancePolicy,
+  totalAttendanceCount,
+  perHourSalary
+) {
+  if (attendancePolicy?.earlyLeavingType !== "fixed") return 0;
+
+  const penaltyAmount = Number(attendancePolicy.earlyExitPenaltyAmt || 0);
+  const hoursOnly = Number(
+    (totalAttendanceCount?.totalEarlyDuration || "0:0").split(":")[0]
+  );
+
+  if (attendancePolicy.earlyLeavingDayMode === "Custom Multiplier") {
+    return penaltyAmount * perHourSalary * hoursOnly;
+  }
+  return penaltyAmount * hoursOnly;
+}
+
+function calculateWorkingHourPenalty(attendancePolicy, totalAttendanceCount) {
+  if (attendancePolicy?.workingHoursType !== "fixed") return 0;
+
+  const penaltyAmount = Number(attendancePolicy.workingHoursAmount || 0);
+  return (totalAttendanceCount?.workingHours || 0) * penaltyAmount;
+}
+
+function calculateOvertimePay(
+  attendancePolicy,
+  totalAttendanceCount,
+  perHourSalary
+) {
+  const parseHours = (timeString) =>
+    parseInt((timeString || "0:0").split(":")[0]) || 0;
+
+  const workingHoursOT = parseHours(totalAttendanceCount?.workingDayOTHours);
+  const weekOffOT = parseHours(totalAttendanceCount?.weekOffOTHours);
+  const holidayOT = parseHours(totalAttendanceCount?.holidayOTHours);
+
+  const calculatePay = (hours, type, payField) => {
+    if (!hours) return 0;
+
+    switch (attendancePolicy?.[type]) {
+      case "Custom Multiplier":
+        return (
+          hours * (Number(attendancePolicy?.[payField] || 1) * perHourSalary)
+        );
+      case "Fixed Hourly Rate":
+        return hours * Number(attendancePolicy?.[payField] || 0);
+      default:
+        return 0;
+    }
+  };
+
+  return {
+    workingHoursOTPay: calculatePay(
+      workingHoursOT,
+      "workingHoursType",
+      "extraHoursPay"
+    ),
+    weekOffOTPay: calculatePay(weekOffOT, "weekOffType", "weekOffPay"),
+    holidayOTPay: calculatePay(
+      holidayOT,
+      "publicHolidayType",
+      "publicHolidayPay"
+    ),
+  };
+}
+
+function extractLeaveData(totalAttendanceCount) {
+  const extractLeave = (leaveData, countField) => {
+    if (leaveData?.leave) {
+      return {
+        count: totalAttendanceCount?.[countField] || 0,
+        leave: leaveData.leave,
+      };
+    }
+    return {};
+  };
+
+  return {
+    lateLeave: extractLeave(totalAttendanceCount?.lateData, "lateComing"),
+    earlyLeave: extractLeave(
+      totalAttendanceCount?.earlyLeavingData,
+      "earlyLeaving"
+    ),
+    workingHourLeave: extractLeave(
+      totalAttendanceCount?.workingHoursData,
+      "workingHours"
+    ),
+  };
+}
+
+// ==================== MAIN PROCESSING FUNCTION (UPDATED) ====================
+
+function processEmployeeData(
+  personal,
+  salaryBreakdown,
+  payrollData,
+  startDate,
+  endDate,
+  totalDays,
+  stateTaxRules
+) {
+  const payableDays = payrollData?.payableDays || 0;
+  const gender = personal?.assignedUser?.gender || null;
+  const salaryTracking = salaryBreakdown?.salaryTracking;
+  const monthlyCtc = getMonthlyCTCFromTracking(salaryTracking, endDate) || 0;
+
+  // ===== STEP 1: Extract data from SalaryBreakdown =====
+
+  const rawEarnings = getEarningsFromBreakdown(salaryBreakdown, endDate);
+  const rawDeductions = getDeductionsFromBreakdown(salaryBreakdown, endDate);
+  const employeeDeductions = getEmployeeDeductionsFromBreakdown(
+    salaryBreakdown,
+    endDate
+  );
+  const employerContributions = getEmployerContributionsFromBreakdown(
+    salaryBreakdown,
+    endDate
+  );
+
+  // === LWF ===
+
+  const lwfStateId = extractStateIdFromBreakdown(
+    salaryBreakdown,
+    endDate,
+    "LWF"
+  );
+  console.log("[DEBUG] LWF stateId:", lwfStateId);
+  console.log("[DEBUG] Available state rules:", Object.keys(stateTaxRules)); // ADD THIS
+
+  const lwf =
+    lwfStateId && stateTaxRules[lwfStateId]
+      ? getLWFFromRules(stateTaxRules[lwfStateId], startDate, endDate) // CHANGED: Pass startDate
+      : { employerLWF: 0, employeeLWF: 0, state: null };
+  console.log("[DEBUG] LWF result:", lwf);
+  const { month } = getYearMonth(endDate);
+  // === PT: Special month override ===
+
+  const ptStateId = extractStateIdFromBreakdown(salaryBreakdown, endDate, "PT");
+  console.log("[DEBUG] PT stateId:", ptStateId);
+  console.log(
+    "[DEBUG] stateTaxRules available keys:",
+    Object.keys(stateTaxRules)
+  ); // ADD THIS
+  console.log(
+    "[DEBUG] stateTaxRules[ptStateId]:",
+    ptStateId ? JSON.stringify(stateTaxRules[ptStateId], null, 2) : "N/A"
+  ); // ADD THIS
+
+  let pt = 0;
+
+  if (ptStateId && stateTaxRules[ptStateId]) {
+    const rules = stateTaxRules[ptStateId]; // This now contains {PT: [...], PtMonth: {...}, LWF: {...}}
+
+    console.log(
+      `[DEBUG] Using rules for state ${ptStateId}:`,
+      JSON.stringify(rules, null, 2)
+    ); // ADD THIS
+
+    // Check for special month override FIRST
+    if (rules.PtMonth?.Month === month) {
+      pt = rules.PtMonth.professionalTax || 0;
+      console.log(
+        `[DEBUG] ✅ PT Special Month Match! Month=${month} → PT = ${pt}`
+      ); // CHANGED
+    } else {
+      console.log(
+        `[DEBUG] No special month (rules.PtMonth.Month=${rules.PtMonth?.Month}, current=${month}), calculating from slab...`
+      ); // ADD THIS
+      pt = calculatePTFromRules(rules, gender, monthlyCtc, month);
+      console.log(`[DEBUG] PT from slab calculation: ${pt}`); // ADD THIS
+    }
+
+    console.log(`[DEBUG] ✅ Final PT for state ${ptStateId}: ${pt}`); // CHANGED
+  } else {
+    console.log(
+      `[DEBUG] ❌ No PT calculation - ptStateId: ${ptStateId}, has rules: ${!!stateTaxRules[
+        ptStateId
+      ]}`
+    ); // ADD THIS
+  }
+
+  // ===== STEP 3: Adjust earnings and deductions for payable days =====
+  const adjustedEarnings = adjustAmountsForPayableDays(
+    rawEarnings,
+    totalDays,
+    payableDays
+  );
+  const adjustedDeductions = adjustAmountsForPayableDays(
+    rawDeductions,
+    totalDays,
+    payableDays
+  );
+
+  const adjustedEmployeeDeductions = {
+    employeePF:
+      (employeeDeductions.employeePF / Number(totalDays)) * payableDays,
+    employeePFBase:
+      (employeeDeductions.employeePFBase / Number(totalDays)) * payableDays,
+    employeePFConfig: employeeDeductions.employeePFConfig, // ADD THIS LINE
+    employeeESI:
+      (employeeDeductions.employeeESI / Number(totalDays)) * payableDays,
+    employeeESIBase:
+      (employeeDeductions.employeeESIBase / Number(totalDays)) * payableDays,
+    employeeESIConfig: employeeDeductions.employeeESIConfig, // ADD THIS LINE
+    voluntaryPF:
+      (employeeDeductions.voluntaryPF / Number(totalDays)) * payableDays,
+  };
+
+  const adjustedEmployerContributions = {
+    employerPF: {
+      amount:
+        (employerContributions.employerPF.amount / Number(totalDays)) *
+        payableDays,
+      // ADD THIS
+      baseAmount:
+        (employerContributions.employerPF.baseAmount / Number(totalDays)) *
+        payableDays,
+      includedInCTC: employerContributions.employerPF.includedInCTC,
+    },
+    employerESI: {
+      amount:
+        (employerContributions.employerESI.amount / Number(totalDays)) *
+        payableDays,
+      // ADD THIS
+      baseAmount:
+        (employerContributions.employerESI.baseAmount / Number(totalDays)) *
+        payableDays,
+      includedInCTC: employerContributions.employerESI.includedInCTC,
+    },
+  };
+
+  // ===== STEP 4: Calculate Admin Charges =====
+  const adminConfig = personal?.config?.adminCharges;
+  const adminCharge = calculateAdminChargeFromBreakdown(
+    adjustedEmployerContributions,
+    adminConfig
+  );
+
+  // ===== STEP 5: Extract other deductions and amounts =====
+  const otherDeductions = extractOtherDeductions(salaryBreakdown, endDate);
+  const advanceAmounts = extractMonthlyAmount(
+    salaryBreakdown?.advance,
+    endDate
+  );
+  const loanDebitAmounts = extractMonthlyAmount(
+    salaryBreakdown?.loanDebit,
+    endDate
+  );
+  const loanCreditAmounts = extractMonthlyAmount(
+    salaryBreakdown?.loanCredit,
+    endDate
+  );
+
+  // ===== STEP 6: Extract salary arrears and bonus/incentive =====
+  const { pendingEarnings, totalAmount: totalSalaryArrearAmount } =
+    extractSalaryArrears(salaryBreakdown, endDate);
+  const { bonusDetails, incentiveDetails, retentionDetails } =
+    extractBonusIncentiveDetails(salaryBreakdown, endDate);
+
+  // ===== STEP 7: Calculate attendance penalties and OT =====
+  const attendancePolicy = personal?.config?.attendancePolicies;
+  const totalAttendanceCount = payrollData?.totalAttendanceCount || {};
+  const perDaySalary =
+    (salaryBreakdown?.totalEarnings || 0) / Number(totalDays);
+  const perHourSalary = perDaySalary / 9;
+
+  const lateEntryPenalty = calculateLateEntryPenalty(
+    attendancePolicy,
+    totalAttendanceCount,
+    perHourSalary
+  );
+  const earlyLeavingPenalty = calculateEarlyLeavingPenalty(
+    attendancePolicy,
+    totalAttendanceCount,
+    perHourSalary
+  );
+  const workingHourPenalty = calculateWorkingHourPenalty(
+    attendancePolicy,
+    totalAttendanceCount
+  );
+
+  const { workingHoursOTPay, weekOffOTPay, holidayOTPay } =
+    calculateOvertimePay(attendancePolicy, totalAttendanceCount, perHourSalary);
+
+  const { lateLeave, earlyLeave, workingHourLeave } =
+    extractLeaveData(totalAttendanceCount);
+
+  // ===== STEP 8: Calculate totals =====
+  const totalEarnings =
+    Object.values(adjustedEarnings).reduce((sum, val) => sum + val, 0) +
+    (adjustedEmployerContributions.employerPF.includedInCTC
+      ? adjustedEmployerContributions.employerPF.amount
+      : 0) +
+    (adjustedEmployerContributions.employerESI.includedInCTC
+      ? adjustedEmployerContributions.employerESI.amount
+      : 0) +
+    adminCharge.rupee +
+    lwf.employerLWF +
+    totalSalaryArrearAmount +
+    holidayOTPay +
+    workingHoursOTPay +
+    weekOffOTPay;
+
+  const totalDeductions =
+    Object.values(adjustedDeductions).reduce((sum, val) => sum + val, 0) +
+    adjustedEmployeeDeductions.employeePF +
+    adjustedEmployeeDeductions.employeeESI +
+    adjustedEmployeeDeductions.voluntaryPF +
+    pt +
+    lwf.employeeLWF +
+    Object.values(otherDeductions).reduce((sum, val) => sum + val, 0);
+
+  const totalBenefits =
+    bonusDetails.reduce((sum, b) => sum + (b.amount || 0), 0) +
+    incentiveDetails.reduce((sum, i) => sum + (i.amount || 0), 0) +
+    retentionDetails.reduce((sum, r) => sum + (r.amount || 0), 0);
+
+  // ===== STEP 9: Format employer contributions for response =====
+  const employerContributionsFormatted = [
+    {
+      name: "EmployerPF",
+      amount: Math.round(adjustedEmployerContributions.employerPF.amount),
+      baseAmount: Math.round(
+        adjustedEmployerContributions.employerPF.baseAmount
+      ), // ADD THIS
+      includedInCTC: adjustedEmployerContributions.employerPF.includedInCTC,
+    },
+    {
+      name: "EmployerESI",
+      amount: Math.round(adjustedEmployerContributions.employerESI.amount),
+      baseAmount: Math.round(
+        adjustedEmployerContributions.employerESI.baseAmount
+      ), // ADD THIS
+      includedInCTC: adjustedEmployerContributions.employerESI.includedInCTC,
+    },
+  ];
+
+  const employeeDeductionsFormatted = [
+    {
+      name: "EmployeePF",
+      amount: Math.round(adjustedEmployeeDeductions.employeePF),
+      baseAmount: Math.round(adjustedEmployeeDeductions.employeePFBase),
+      ...adjustedEmployeeDeductions.employeePFConfig,
+    },
+    {
+      name: "EmployeeESI",
+      amount: Math.round(adjustedEmployeeDeductions.employeeESI),
+      baseAmount: Math.round(adjustedEmployeeDeductions.employeeESIBase),
+      ...adjustedEmployeeDeductions.employeeESIConfig,
+    },
+    {
+      name: "VoluntaryPF",
+      amount: Math.round(adjustedEmployeeDeductions.voluntaryPF),
+    },
+  ];
+
+  // ===== STEP 10: Return processed data =====
+  return {
+    payrollId: payrollData?.id || null,
+    id: personal?.id || null,
+    employeeId: personal?.employeeId || null,
+    name: personal?.assignedUser?.first_name || "",
+    monthlyCtc: monthlyCtc || 0,
+
+    earnings: adjustedEarnings,
+    deduction: adjustedDeductions,
+
+    employerContributions: employerContributionsFormatted,
+    employeeDeductions: employeeDeductionsFormatted,
+
+    adminCharge: adminCharge,
+    employerLwf: lwf.employerLWF,
+    employeeLwf: lwf.employeeLWF,
+    pt: pt,
+
+    otherDeductions,
+    advanceAmounts,
+    loanDebitAmounts,
+    loanCreditAmounts,
+    salaryArrears: pendingEarnings,
+
+    bonusDetails,
+    incentiveDetails,
+    retentionDetails,
+
+    latePenalty: Math.round(lateEntryPenalty),
+    lateLeave,
+    earlyLeavingPenalty: Math.round(earlyLeavingPenalty),
+    earlyLeave,
+    workingHourPenalty: Math.round(workingHourPenalty),
+    workingHourLeave,
+
+    workingHoursOTPay: Math.round(workingHoursOTPay),
+    weekOffOTPay: Math.round(weekOffOTPay),
+    holidayOTPay: Math.round(holidayOTPay),
+
+    payableDays,
+    totalEarnings: Math.round(totalEarnings),
+    totalDeductions: Math.round(totalDeductions),
+    totalBenefits: Math.round(totalBenefits),
+    netSalary: Math.round(totalEarnings - totalDeductions + totalBenefits),
+
+    perHourSalary: Math.round(perHourSalary),
+    perDaySalary: Math.round(perDaySalary),
+  };
+}
+
+// ==================== MAIN ENDPOINT (UPDATED) ====================
+
 var src = function registerEndpoint(router, { services }) {
   const { ItemsService } = services;
 
   router.get("/", async (req, res) => {
-    const { startDate, endDate, totalDays } = req.query;
-
-    if (!startDate || !endDate) {
-      return res.status(400).json({
-        error: "startDate and endDate are required in query parameters",
-      });
-    }
-
-    if (!totalDays) {
-      return res.status(400).json({
-        error: "totalDays is required in query parameters",
-      });
-    }
-
     try {
-      let employeeIds = [];
+      const { startDate, endDate, totalDays } = req.query;
 
-      if (
-        req.query.filter &&
-        req.query.filter.employeeIds &&
-        req.query.filter.employeeIds._in
-      ) {
-        employeeIds = req.query.filter.employeeIds._in
-          .split(",")
-          .map((id) => id.trim());
-      } else {
-        return res.status(400).json({
-          error: "Employee IDs required in filter[employeeIds][_in] parameter",
-        });
+      // ===== VALIDATION =====
+      const validation = validateQueryParameters(req.query);
+      if (!validation.valid) {
+        return res.status(400).json({ error: validation.error });
       }
 
-      if (!employeeIds.length) {
-        return res.status(400).json({ error: "Employee IDs required" });
+      const employeeIdsResult = extractEmployeeIds(req.query);
+      if (!employeeIdsResult.valid) {
+        return res.status(400).json({ error: employeeIdsResult.error });
       }
-      const personalModuleService = new ItemsService("personalModule", {
-        schema: req.schema,
-        accountability: req.accountability,
-      });
+      const employeeIds = employeeIdsResult.ids;
 
-      const salaryBreakdownService = new ItemsService("SalaryBreakdown", {
-        schema: req.schema,
-        accountability: req.accountability,
-      });
-      const personalModuleData = await personalModuleService.readByQuery({
-        filter: {
-          id: { _in: employeeIds },
-        },
-        fields: [
-          "id",
-          "employeeId",
-          "assignedUser.first_name",
-          "assignedUser.gender",
-          "assignedUser.PFAccountNumber",
-          "assignedUser.ESIAccountNumber",
-          // "salaryConfig.basicPay",
-          // "salaryConfig.stateTaxes.state",
-          // "salaryConfig.bonusConfig",
-          // "salaryConfig.id",
-          // "salaryConfig.earnings",
-          // "salaryConfig.deductions",
-          // "salaryConfig.employerContribution",
-          // "salaryConfig.advancedMode",
-          // "salaryConfig.allowances",
-          // "salaryConfig.deduction",
-          // "salaryConfig.professionalTax.highlySkilled",
-          // "salaryConfig.professionalTax.skilled",
-          // "salaryConfig.professionalTax.stateTaxRules",
-          // "salaryConfig.professionalTax.state",
-          // "salaryConfig.professionalTax.id",
-          // "salaryConfig.LWF.state",
-          // "salaryConfig.LWF.stateTaxRules",
-          // "salaryConfig.LWF.skilled",
-          // "salaryConfig.LWF.highlySkilled",
-          // "salaryConfig.LWF.id",
-          // "salaryConfig.employersContributions",
-          // "salaryConfig.employeeDeductions",
-          // "salaryConfig.configName",
-          // "salaryConfig.adminCharges",
-          // "salaryConfig.stateTaxes.stateTaxRules",
-          // "salaryConfig.stateTaxes.id",
-          // "salaryConfig.stateTaxes.skilled",
-          // "salaryConfig.stateTaxes.highlySkilled",
-          // "salaryConfig.zone",
-          // "salaryConfig.skillLevel",
-          // "salaryConfig.retentionPayConfig",
-          // "salaryConfig.incentiveConfig",
-          // "salaryConfig.shopEstablishment",
-          "config.attendancePolicies",
-          "config.attendancePolicies.LateCommingDayMode",
-          "config.attendancePolicies.earlyExitAllowed",
-          "config.attendancePolicies.earlyLeavingDayMode",
-          "config.attendancePolicies.earlyLeavingType",
-          "config.attendancePolicies.entryTimeLimit",
-          "config.attendancePolicies.exitTimeLimit",
-          "config.attendancePolicies.isOverTime",
-          "config.attendancePolicies.isWorkingHours",
-          "config.attendancePolicies.lateComingType",
-          "config.attendancePolicies.lateEntryAllowed",
-          "config.attendancePolicies.lateEntryPenaltyAmt",
-          "config.attendancePolicies.locationCentric",
-          "config.attendancePolicies.setEntryTimeLimit",
-          "config.attendancePolicies.setExitTimeLimit",
-          "config.attendancePolicies.setMinWorkingHours",
-          "config.attendancePolicies.setOverTimeLimit",
-          "config.attendancePolicies.workingHoursType",
-          "config.attendancePolicies.workinghrsDaysLimit",
-          "config.attendancePolicies.wrkHoursDayMode",
-          "config.attendancePolicies.earlyExitPenaltyAmt",
-          "config.attendancePolicies.extraHoursPay ",
-          "config.attendancePolicies.weekOffPay",
-          "config.attendancePolicies.publicHolidayPay",
-          "config.attendancePolicies.weekOffType",
-          "config.attendancePolicies.publicHolidayType",
-          "config.attendancePolicies.extraHoursType",
-          "config.attendanceSettings",
-          "assignedUser.pfTracking",
-          "assignedUser.esiTracking",
-          "salaryConfigTracking",
-        ],
-        sort: ["-date_updated"],
-        limit: -1,
-      });
-      const trackingIds = personalModuleData.flatMap((item) =>
-        Object.values(item.salaryConfigTracking || {}).flatMap((year) =>
-          Object.values(year)
-        )
+      // ===== FETCH DATA =====
+      const personalModuleData = await fetchPersonalModuleData(
+        ItemsService,
+        req,
+        employeeIds
       );
 
-      const allConfigIds = personalModuleData.flatMap((item) => {
-        const targetYear = new Date(endDate).getFullYear();
-        const targetMonth = new Date(endDate).getMonth() + 1; // Months are 1-indexed in tracking
-
-        const tracking = item.salaryConfigTracking || {};
-        const id =
-          tracking[targetYear]?.[String(targetMonth).padStart(2, "0")] ||
-          Object.entries(tracking[targetYear] || {})
-            .filter(([m]) => Number(m) < targetMonth)
-            .pop()?.[1] ||
-          null;
-
-        return id ? [id] : [];
-      });
-
-      const allConfigIdsToFetch = [
-        ...new Set([...allConfigIds, ...trackingIds]),
-      ];
-
-      const salarySettingService = new ItemsService("salarySetting", {
-        schema: req.schema,
-        accountability: req.accountability,
-      });
-
-      const salarySettings = allConfigIdsToFetch.length
-        ? await salarySettingService.readByQuery({
-            filter: { id: { _in: allConfigIdsToFetch } },
-            fields: [
-              "basicPay",
-              "earnings",
-              "deductions",
-              "employerContribution",
-              "allowances",
-              "deduction",
-              "professionalTax",
-              "LWF",
-              "LWF.state",
-              "LWF.stateTaxRules",
-              "professionalTax.state",
-              "professionalTax.stateTaxRules",
-              "employersContributions",
-              "employeeDeductions",
-              "adminCharges",
-              "stateTaxes",
-              "id",
-            ],
-            limit: -1,
-          })
-        : [];
-
-      if (salarySettings.length) {
-        personalModuleData.forEach((item) => {
-          const targetYear = new Date(endDate).getFullYear();
-          const targetMonth = new Date(endDate).getMonth() + 1;
-
-          const tracking = item.salaryConfigTracking || {};
-          const directMatch =
-            tracking[targetYear]?.[String(targetMonth).padStart(2, "0")] ||
-            null;
-
-          const previousMatch =
-            Object.entries(tracking[targetYear] || {})
-              .map(([m, v]) => [Number(m), v])
-              .filter(([m]) => m < targetMonth)
-              .sort((a, b) => a[0] - b[0])
-              .pop()?.[1] || null;
-
-          const id = directMatch || previousMatch || null;
-
-          if (id) {
-            item.salaryConfig =
-              salarySettings.find((cfg) => cfg.id == id) || null;
-          } else {
-            item.salaryConfig = null;
-          }
-        });
-      }
-
-      const personalIds = personalModuleData.map((item) => item.id);
       if (!personalModuleData.length) {
         return res.status(404).json({
           error: "No employee records found",
@@ -222,38 +1231,11 @@ var src = function registerEndpoint(router, { services }) {
         });
       }
 
-      const salaryBreakdownData = await salaryBreakdownService.readByQuery({
-        filter: {
-          employee: { _in: employeeIds },
-        },
-        fields: [
-          "ctc",
-          "employee.id",
-          "employee.employeeId",
-          "basicSalary",
-          "basicPay",
-          "earnings",
-          "employersContribution",
-
-          "individualDeduction",
-          "voluntaryPF",
-          "salaryArrears",
-          "totalEarnings",
-          "employeeDeduction",
-          "deduction",
-          "totalDeductions",
-          "netSalary",
-          "professionalTax",
-          "employerLwf",
-          "employeeLwf",
-          "employeradmin",
-          "anualEarnings",
-          "annualDeduction",
-          "benefitsManual",
-          "id",
-        ],
-        limit: -1,
-      });
+      const salaryBreakdownData = await fetchSalaryBreakdown(
+        ItemsService,
+        req,
+        employeeIds
+      );
 
       if (!salaryBreakdownData.length) {
         return res.status(404).json({
@@ -262,592 +1244,103 @@ var src = function registerEndpoint(router, { services }) {
             "No salary breakdown records found for the provided employees",
         });
       }
+      const stateIds = new Set();
 
-      const payrollVerificationService = new ItemsService(
-        "payrollVerification",
-        {
-          schema: req.schema,
-          accountability: req.accountability,
-        }
+      salaryBreakdownData.forEach((breakdown) => {
+        const lwfStateId = extractStateIdFromBreakdown(
+          breakdown,
+          endDate,
+          "LWF"
+        );
+        const ptStateId = extractStateIdFromBreakdown(breakdown, endDate, "PT");
+
+        // Only add valid state IDs (not null, undefined, or NaN)
+        if (lwfStateId && !isNaN(lwfStateId)) stateIds.add(lwfStateId);
+        if (ptStateId && !isNaN(ptStateId)) stateIds.add(ptStateId);
+      });
+
+      console.log(
+        "Collected state IDs from salaryBreakdown:",
+        Array.from(stateIds)
       );
 
-      const payrollVerificationData =
-        await payrollVerificationService.readByQuery({
-          filter: {
-            employee: { id: { _in: employeeIds } },
-            startDate: {
-              _between: [
-                new Date(startDate).toISOString(),
-                new Date(endDate).toISOString(),
-              ],
-            },
-          },
-          fields: ["payableDays", "employee.id", "id", "totalAttendanceCount"],
-          limit: -1,
-        });
+      // Only fetch state tax rules if we have valid state IDs
+      // === REPLACE THE ENTIRE BLOCK (from stateIds.size > 0) ===
+      const stateTaxRulesString =
+        stateIds.size > 0
+          ? await fetchStateTaxRules(ItemsService, req, Array.from(stateIds))
+          : "{}";
 
-      const shouldIncludeManualBenefit = (item) => {
-        if (!item || !item.amount || !item.month) return false;
-        return item.month === new Date(endDate).getMonth() + 1;
-      };
+      // REPLACE THIS ENTIRE BLOCK:
+      let stateTaxRules = {};
+      if (stateTaxRulesString && stateTaxRulesString !== "{}") {
+        try {
+          const records = JSON.parse(stateTaxRulesString);
+          console.log(
+            "[DEBUG] Parsed records from fetchStateTaxRules:",
+            JSON.stringify(records, null, 2)
+          ); // ADD THIS
 
-      const combinedData = personalModuleData.map((personal) => {
-        const salaryInfo = salaryBreakdownData.find(
-          (salary) => salary.employee && salary.employee.id === personal.id
-        );
-
-        const payrollData = payrollVerificationData.find(
-          (p) => p.employee && p.employee.id === personal.id
-        );
-
-        const payableDays = payrollData?.payableDays || 0;
-        const earnings = salaryInfo?.earnings || {};
-        const deductions = salaryInfo?.deduction || {};
-        const basicPay = Number(salaryInfo?.basicPay || 0);
-        const adjustedBasicPay = (basicPay / Number(totalDays)) * payableDays;
-        const stateTax = personal?.salaryConfig?.stateTaxes?.stateTaxRules;
-        const monthlyEarnings = salaryInfo?.totalEarnings;
-        const monthlyCTC = salaryInfo?.basicSalary;
-        let pfTracking = true;
-        if (endDate && personal.assignedUser?.pfTracking) {
-          pfTracking =
-            new Date(endDate) >= new Date(personal.assignedUser.pfTracking);
-        }
-
-        let esiTracking = true;
-        if (endDate && personal.assignedUser?.esiTracking) {
-          esiTracking =
-            new Date(endDate) >= new Date(personal.assignedUser.esiTracking);
-        }
-
-        const adjustedEarnings = {};
-        for (const key in earnings) {
-          adjustedEarnings[key] =
-            (earnings[key] / Number(totalDays)) * payableDays;
-        }
-        adjustedEarnings["Basic Pay"] = adjustedBasicPay;
-
-        const adjustedDeductions = {};
-        for (const key in deductions) {
-          adjustedDeductions[key] =
-            (deductions[key] / Number(totalDays)) * payableDays;
-        }
-        let employerPFContribution = 0;
-        const employerContributionsConfig =
-          personal?.salaryConfig?.employersContributions ?? {};
-
-        const employerContributions = ["EmployerPF", "EmployerESI"].map(
-          (type) => {
-            const config = employerContributionsConfig[type];
-            const includedInCTC =
-              salaryInfo?.employersContribution?.[type]?.includedInCTC ??
-              config?.withinCTC;
-
-            if (
-              !config ||
-              config.selectedOption === null ||
-              !includedInCTC ||
-              (type === "EmployerPF" &&
-                !personal.assignedUser.PFAccountNumber) ||
-              (type === "EmployerESI" &&
-                !personal.assignedUser.ESIAccountNumber)
-            ) {
-              return {
-                name: type,
-                rupee: 0,
-              };
-            }
-            const calculations = Array.isArray(config.Calculations)
-              ? config.Calculations
-              : [];
-            const totalAmount = calculations.reduce((sum, calc) => {
-              const earningAmount = adjustedEarnings[calc.name] || 0;
-              return sum + earningAmount;
-            }, 0);
-            employerPFContribution = totalAmount;
-            let finalValue = 0;
-            if (type === "EmployerPF") {
-              if (config.selectedOption === 1800) {
-                finalValue = Math.min(totalAmount * (12 / 100), 1800);
-              } else {
-                finalValue = totalAmount * (config.selectedOption / 100);
+          records.forEach((r) => {
+            if (r.id && r.stateTaxRules) {
+              let rules = r.stateTaxRules;
+              if (typeof rules === "string") {
+                try {
+                  rules = JSON.parse(rules);
+                } catch (e) {
+                  console.error(
+                    `[ERROR] Invalid JSON in stateTaxRules for state ${r.id}`
+                  );
+                  return;
+                }
               }
-            } else if (type === "EmployerESI") {
-              if (monthlyCTC <= 21000) {
-                finalValue = Math.min(
-                  totalAmount * (config.selectedOption / 100),
-                  682.5
-                );
-              } else {
-                finalValue = 0;
-              }
-            }
-            return {
-              name: type,
-              totalAmount: totalAmount,
-              rupee: Math.round(finalValue),
-            };
-          }
-        );
 
-        const employeeDeductionsConfig =
-          personal?.salaryConfig?.employeeDeductions ?? {};
-        const employeeDeductions = ["EmployeePF", "EmployeeESI"].map((type) => {
-          const config = employeeDeductionsConfig[type];
-          if (
-            !config ||
-            config.selectedOption === null ||
-            (type === "EmployeePF" && !personal.assignedUser.PFAccountNumber) ||
-            (type === "EmployeeESI" && !personal.assignedUser.ESIAccountNumber)
-          ) {
-            return {
-              name: type,
-              rupee: 0,
-            };
-          }
-          const calculations = Array.isArray(config.Calculations)
-            ? config.Calculations
-            : [];
-          const totalAmount = calculations.reduce((sum, calc) => {
-            const earningAmount = adjustedEarnings[calc.name] || 0;
-            return sum + earningAmount;
-          }, 0);
-          let finalValue = 0;
-          if (type === "EmployeePF") {
-            if (config.selectedOption === 1800) {
-              finalValue = Math.min(totalAmount * (12 / 100), 1800);
-            } else {
-              finalValue = totalAmount * (config.selectedOption / 100);
-            }
-          } else if (type === "EmployeeESI") {
-            if (monthlyCTC <= 21000) {
-              finalValue = totalAmount * (config.selectedOption / 100);
-            } else {
-              finalValue = 0;
-            }
-          }
-          return {
-            name: type,
-            totalAmount: totalAmount,
-            rupee: Math.round(finalValue),
-          };
-        });
-        let employerPFContributionwithoutCtc = 0;
-        const employerContributionsFull = ["EmployerPF", "EmployerESI"].map(
-          (type) => {
-            const config = employerContributionsConfig[type];
-            if (
-              !config ||
-              config.selectedOption === null ||
-              (type === "EmployerPF" &&
-                !personal.assignedUser.PFAccountNumber) ||
-              (type === "EmployerESI" &&
-                !personal.assignedUser.ESIAccountNumber)
-            ) {
-              return {
-                name: type,
-                rupee: 0,
-              };
-            }
-            const calculations = Array.isArray(config.Calculations)
-              ? config.Calculations
-              : [];
-            const totalAmount = calculations.reduce((sum, calc) => {
-              const earningAmount = adjustedEarnings[calc.name] || 0;
-              return sum + earningAmount;
-            }, 0);
-            employerPFContributionwithoutCtc = totalAmount;
-            let finalValue = 0;
-            if (type === "EmployerPF") {
-              if (config.selectedOption === 1800) {
-                finalValue = Math.min(totalAmount * (12 / 100), 1800);
-              } else {
-                finalValue = totalAmount * (config.selectedOption / 100);
-              }
-            } else if (type === "EmployerESI") {
-              if (monthlyCTC <= 21000) {
-                finalValue = Math.min(
-                  totalAmount * (config.selectedOption / 100),
-                  682.5
-                );
-              } else {
-                finalValue = 0;
-              }
-            }
-
-            return {
-              name: type,
-              totalAmount: totalAmount,
-              rupee: Math.round(finalValue),
-            };
-          }
-        );
-
-        const adminConfig = personal?.salaryConfig?.adminCharges;
-        const employerPFIncludedInCTC =
-          salaryInfo?.employersContribution?.EmployerPF?.includedInCTC ??
-          employerContributionsConfig["EmployerPF"]?.withinCTC;
-        let adminChargeWithoutCtc = { name: "adminCharge", rupee: 0 };
-        if (personal.assignedUser.PFAccountNumber) {
-          if (adminConfig?.enable) {
-            const calculated =
-              (Number(adminConfig.charge) / 100) *
-              employerPFContributionwithoutCtc;
-            adminChargeWithoutCtc.rupee = Math.round(Math.min(calculated, 150));
-          }
-        }
-
-        let adminChargeContribution = { name: "AdminCharge", rupee: 0 };
-        if (employerPFIncludedInCTC && personal.assignedUser.PFAccountNumber) {
-          if (adminConfig?.enable) {
-            const calculated =
-              (Number(adminConfig.charge) / 100) * employerPFContribution;
-            adminChargeContribution.rupee = Math.round(
-              Math.min(calculated, 150)
-            );
-          }
-        }
-
-        const deductionDates = stateTax?.LWF?.Deduction || [];
-        const lwfApplicable = deductionDates.some((date) => {
-          const year = new Date(startDate).getFullYear();
-          const deductionDate = new Date(`${year}-${date}`);
-          return (
-            deductionDate >= new Date(startDate) &&
-            deductionDate <= new Date(endDate)
-          );
-        });
-        const employerLwf = lwfApplicable ? stateTax?.LWF?.EmployerLWF : 0;
-        const employeeLwf = lwfApplicable ? stateTax?.LWF?.EmployeeLWF : 0;
-
-        const otherDeductions = {};
-        if (salaryInfo.individualDeduction) {
-          Object.entries(salaryInfo.individualDeduction).forEach(
-            ([key, deduction]) => {
-              const deductionDate = new Date(deduction.date);
-              if (
-                deductionDate >= new Date(startDate) &&
-                deductionDate <= new Date(endDate)
-              ) {
-                otherDeductions[deduction.name] = deduction.amount;
-              }
-            }
-          );
-        }
-
-        let pendingEarnings = {};
-        let totalSalaryArrearAmount = 0;
-        if (salaryInfo.salaryArrears) {
-          Object.values(salaryInfo.salaryArrears).forEach((arrear) => {
-            const arrearDate = new Date(arrear.date);
-            if (
-              arrearDate >= new Date(startDate) &&
-              arrearDate <= new Date(endDate)
-            ) {
-              const amount = parseFloat(arrear.amount || 0);
-              pendingEarnings[arrear.name] = amount;
-              totalSalaryArrearAmount += amount;
+              // CHANGED: Store the rules directly (PT, PtMonth, LWF object)
+              stateTaxRules[r.id] = rules;
+              console.log(
+                `[DEBUG] Stored rules for state ${r.id}:`,
+                JSON.stringify(stateTaxRules[r.id], null, 2)
+              );
             }
           });
+          console.log(
+            "[DEBUG] Final stateTaxRules keys:",
+            Object.keys(stateTaxRules)
+          ); // ADD THIS
+        } catch (e) {
+          console.error("[ERROR] Failed to parse stateTaxRulesString:", e);
         }
+      }
+      const payrollVerificationData = await fetchPayrollVerification(
+        ItemsService,
+        req,
+        employeeIds,
+        startDate,
+        endDate
+      );
 
-        let voluntaryPFAmount = 0;
-        const voluntary = salaryInfo?.voluntaryPF;
-        if (voluntary?.VoluntaryPF?.type === "percentage") {
-          const vp = voluntary.VoluntaryPF;
-          const calculations = Array.isArray(vp.Calculations)
-            ? vp.Calculations
-            : [];
-          const totalAmount =
-            calculations.reduce((sum, calc) => {
-              const earningAmount = adjustedEarnings[calc.name] || 0;
-              return sum + earningAmount;
-            }, 0) + totalSalaryArrearAmount;
+      // ===== PROCESS DATA =====
+      const combinedData = personalModuleData.map((personal) => {
+        const salaryBreakdown = salaryBreakdownData.find(
+          (salary) => salary.employee?.id === personal.id
+        );
+        const payrollData = payrollVerificationData.find(
+          (p) => p.employee?.id === personal.id
+        );
 
-          if (Number(vp.selectedOption) === 1800) {
-            const percentageOption = vp.options?.find(
-              (opt) => opt.label === "percentage"
-            );
-            if (percentageOption) {
-              voluntaryPFAmount = Math.min(totalAmount * (13 / 100), 1800);
-            }
-          } else if (vp.selectedOption === null) {
-            voluntaryPFAmount = 0;
-          } else {
-            const percentageOption = vp.options?.find(
-              (opt) => opt.label === "percentage"
-            );
-            if (percentageOption) {
-              voluntaryPFAmount = totalAmount * (percentageOption.value / 100);
-            }
-          }
-        } else if (voluntary?.VoluntaryPF?.type === "fixed") {
-          voluntaryPFAmount = voluntary.VoluntaryPF.amount || 0;
-        }
-
-        const bonusManual =
-          salaryInfo.benefitsManual?.bonusManual &&
-          Array.isArray(salaryInfo.benefitsManual.bonusManual)
-            ? salaryInfo.benefitsManual.bonusManual
-                .filter((item) => shouldIncludeManualBenefit(item))
-                .reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
-            : 0;
-
-        const incentiveManual =
-          salaryInfo.benefitsManual?.incentiveManual &&
-          Array.isArray(salaryInfo.benefitsManual.incentiveManual)
-            ? salaryInfo.benefitsManual.incentiveManual
-                .filter((item) => shouldIncludeManualBenefit(item))
-                .reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
-            : 0;
-
-        const retentionPayManual =
-          salaryInfo.benefitsManual?.retentionPayManual &&
-          Array.isArray(salaryInfo.benefitsManual.retentionPayManual)
-            ? salaryInfo.benefitsManual.retentionPayManual
-                .filter((item) => shouldIncludeManualBenefit(item))
-                .reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
-            : 0;
-
-        const perDaySalary = monthlyEarnings / Number(totalDays);
-        const perHourSalary = perDaySalary / 9;
-
-        let lateEntryPenalty = 0;
-        const attendancePolicy = personal?.config?.attendancePolicies;
-        const totalAttendanceCount = payrollData?.totalAttendanceCount || {};
-
-        if (attendancePolicy?.lateComingType === "fixed") {
-          const penaltyAmount = Number(
-            attendancePolicy.lateEntryPenaltyAmt || 0
-          );
-          const hoursOnly = Number(
-            (totalAttendanceCount?.totalLateDuration || "0:0").split(":")[0]
-          );
-
-          if (attendancePolicy.lateComingDayMode === "Custom Multiplier") {
-            lateEntryPenalty = penaltyAmount * perHourSalary * hoursOnly;
-          } else {
-            lateEntryPenalty = penaltyAmount * hoursOnly;
-          }
-        }
-
-        let lateLeave = {};
-        if (totalAttendanceCount?.lateData?.leave) {
-          const leaveCount = totalAttendanceCount?.lateComing;
-          const leave = totalAttendanceCount?.lateData?.leave;
-          lateLeave = { count: leaveCount, leave: leave };
-        }
-
-        let earlyLeavingPenalty = 0;
-
-        if (attendancePolicy?.earlyLeavingType === "fixed") {
-          const penaltyAmount = Number(
-            attendancePolicy.earlyExitPenaltyAmt || 0
-          );
-          const hoursOnly = Number(
-            (totalAttendanceCount?.totalEarlyDuration || "0:0").split(":")[0]
-          );
-
-          if (attendancePolicy.earlyLeavingDayMode === "Custom Multiplier") {
-            earlyLeavingPenalty = penaltyAmount * perHourSalary * hoursOnly;
-          } else {
-            earlyLeavingPenalty = penaltyAmount * hoursOnly;
-          }
-        }
-
-        let earlyLeave = {};
-        if (totalAttendanceCount?.earlyLeavingData?.leave) {
-          const leaveCount = totalAttendanceCount?.earlyLeaving;
-          const leave = totalAttendanceCount?.earlyLeavingData?.leave;
-          earlyLeave = { count: leaveCount, leave: leave };
-        }
-
-        let workingHourPenalty = 0;
-        if (attendancePolicy?.workingHoursType === "fixed") {
-          const penaltyAmount = Number(
-            attendancePolicy.workingHoursAmount || 0
-          );
-          workingHourPenalty =
-            totalAttendanceCount.workingHours * penaltyAmount;
-        }
-
-        let workingHourLeave = {};
-        if (totalAttendanceCount?.workingHoursData?.leave) {
-          const leaveCount = totalAttendanceCount?.workingHours || 0;
-          const leave = totalAttendanceCount?.workingHoursData?.leave;
-          workingHourLeave = { count: leaveCount, leave: leave };
-        }
-        const workingHoursOT =
-          parseInt(
-            (totalAttendanceCount?.workingDayOTHours || "0:0").split(":")[0]
-          ) || 0;
-        const weekOffOT =
-          parseInt(
-            (totalAttendanceCount?.weekOffOTHours || "0:0").split(":")[0]
-          ) || 0;
-        const holidayOT =
-          parseInt(
-            (totalAttendanceCount?.holidayOTHours || "0:0").split(":")[0]
-          ) || 0;
-
-        let weekOffOTPay = 0;
-
-        if (weekOffOT) {
-          switch (attendancePolicy?.weekOffType) {
-            case "Custom Multiplier":
-              weekOffOTPay =
-                weekOffOT *
-                (Number(attendancePolicy?.weekOffPay || 1) * perHourSalary);
-              break;
-            case "Fixed Hourly Rate":
-              weekOffOTPay =
-                weekOffOT * Number(attendancePolicy?.weekOffPay || 0);
-              break;
-            default:
-              weekOffOTPay = 0;
-          }
-        }
-        let workingHoursOTPay = 0;
-        if (workingHoursOT) {
-          switch (attendancePolicy?.workingHoursType) {
-            case "Custom Multiplier":
-              workingHoursOTPay =
-                workingHoursOT *
-                (Number(attendancePolicy?.workingHoursPay || 1) *
-                  perHourSalary);
-              break;
-            case "Fixed Hourly Rate":
-              workingHoursOTPay =
-                workingHoursOT * Number(attendancePolicy?.extraHoursPay || 0);
-              break;
-            default:
-              workingHoursOTPay = 0;
-          }
-        }
-        let holidayOTPay = 0;
-        if (holidayOT) {
-          switch (attendancePolicy?.publicHolidayType) {
-            case "Custom Multiplier":
-              holidayOTPay =
-                holidayOT *
-                (Number(attendancePolicy?.holidayPay || 1) * perHourSalary);
-              break;
-            case "Fixed Hourly Rate":
-              holidayOTPay =
-                holidayOT * Number(attendancePolicy?.holidayPay || 0);
-              break;
-            default:
-              holidayOTPay = 0;
-          }
-        }
-        const totalEarnings =
-          Object.values(adjustedEarnings).reduce((sum, val) => sum + val, 0) +
-          employerContributions.reduce(
-            (sum, item) => sum + (item?.rupee || 0),
-            0
-          ) +
-          (adminChargeContribution?.rupee || 0) +
-          (employerLwf || 0) +
-          totalSalaryArrearAmount +
-          holidayOTPay +
-          workingHoursOTPay +
-          weekOffOTPay;
-
-        const endMonth = new Date(endDate).getMonth() + 1;
-        let pt = 0;
-        if (stateTax?.PtMonth?.Month == endMonth) {
-          pt = stateTax.PtMonth.professionalTax;
-        } else {
-          const userGender = personal?.assignedUser?.gender;
-          const salary = totalEarnings || 0;
-          const matchedPT = (stateTax?.PT || []).find(
-            ({ salaryRange, gender }) => {
-              if (gender) {
-                if (!userGender) return false;
-                if (gender !== userGender) return false;
-              }
-              if (!salaryRange) return false;
-              if (salaryRange.includes("and above"))
-                return salary >= parseInt(salaryRange);
-              if (salaryRange.includes("-")) {
-                const [min, max] = salaryRange.split("-").map(Number);
-                return salary >= min && salary <= max;
-              }
-              return salary == parseInt(salaryRange, 10);
-            }
-          );
-          if (matchedPT) {
-            pt = matchedPT.professionalTax;
-          }
-        }
-
-        const totalDeductions =
-          Object.values(adjustedDeductions).reduce((sum, val) => sum + val, 0) +
-          employerContributions.reduce(
-            (sum, item) => sum + (item?.rupee || 0),
-            0
-          ) +
-          employeeDeductions.reduce(
-            (sum, item) => sum + (item?.rupee || 0),
-            0
-          ) +
-          (adminChargeContribution?.rupee || 0) +
-          Object.values(otherDeductions).reduce((sum, val) => sum + val, 0) +
-          (pt || 0) +
-          (employeeLwf || 0) +
-          voluntaryPFAmount;
-
-        const totalBenefits =
-          bonusManual + incentiveManual + retentionPayManual;
-
-        return {
-          // ...personal,
-          // data: payrollVerificationData,
-          // salaryBreakdown: salaryInfo || null,
-
-          employeePf: salaryInfo.employeeDeduction?.EmployeePF || 0,
-          monthlyCtc: salaryInfo.basicSalary,
-          payrollId: payrollData?.id || null,
-          id: payrollData?.employee?.id || null,
-          name: personal.assignedUser.first_name,
-          earnings: adjustedEarnings,
-          deduction: adjustedDeductions,
-          employerContributions,
-          employeeDeductions,
-          employerContributionsFull,
-          admin: adminChargeWithoutCtc,
-          employerLwf,
-          employeeLwf,
-          pt,
-          otherDeductions,
-          salaryArrears: pendingEarnings,
-          adminCharge: adminChargeContribution,
-
-          voluntaryPFAmount,
-          bonusManual,
-          incentiveManual,
-          retentionPayManual,
-
-          latePenalty: lateEntryPenalty,
-          lateLeave,
-          earlyLeavingPenalty: earlyLeavingPenalty,
-          earlyLeave,
-          workingHourPenalty,
-          workingHourLeave,
-          workingHoursOTPay,
-          weekOffOTPay,
-          holidayOTPay,
-          payableDays,
-          totalEarnings,
-          totalDeductions,
-          totalBenefits,
-          perHourSalary,
-          perDaySalary,
-          perDaySalary,
-        };
+        return processEmployeeData(
+          personal,
+          salaryBreakdown,
+          payrollData,
+          startDate,
+          endDate,
+          totalDays,
+          stateTaxRules
+        );
       });
 
       return res.json({
+        success: true,
         data: combinedData,
       });
     } catch (err) {
@@ -856,7 +1349,7 @@ var src = function registerEndpoint(router, { services }) {
       return res.status(500).json({
         error: "Internal server error",
         message: err.message,
-        stack: undefined,
+        stack: process.env.NODE_ENV === "development" ? err.stack : undefined,
       });
     }
   });
