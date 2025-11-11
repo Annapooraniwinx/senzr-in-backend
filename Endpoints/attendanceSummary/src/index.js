@@ -464,16 +464,13 @@ module.exports = function registerEndpoint(router, { services }) {
               }
 
               break;
-            case "paidLeave":
-              // empData.totalPayableDays += 1;
-              empData.paidLeave += 1;
-              break;
+
             case "unPaidLeave":
               empData.unpaidLeave += 1;
               break;
-            // case "weekOff":
-            //   empData.weekOff += 1;
-            //   break;
+            case "weekoff":
+              empData.weekOff += 1;
+              break;
             case "weekoffPresent":
               empData.weekOffOT += 1;
               // empData.totalPayableDays += 1;
