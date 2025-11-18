@@ -79,9 +79,9 @@ async function fetchPersonalModuleData(ItemsService, req, employeeIds) {
       "assignedUser.PFAccountNumber",
       "assignedUser.ESIAccountNumber",
       "config.attendancePolicies",
-      "config.attendancePolicies.LateCommingDayMode",
+      "config.attendancePolicies.lateCommingFineType",
       "config.attendancePolicies.earlyExitAllowed",
-      "config.attendancePolicies.earlyLeavingDayMode",
+      "config.attendancePolicies.earlyLeavingfineType",
       "config.attendancePolicies.earlyLeavingType",
       "config.attendancePolicies.entryTimeLimit",
       "config.attendancePolicies.exitTimeLimit",
@@ -97,7 +97,7 @@ async function fetchPersonalModuleData(ItemsService, req, employeeIds) {
       "config.attendancePolicies.setOverTimeLimit",
       "config.attendancePolicies.workingHoursType",
       "config.attendancePolicies.workingHoursAmount",
-      "config.attendancePolicies.wrkHoursDayMode",
+      "config.attendancePolicies.wrkHoursFineType",
       "config.attendancePolicies.workinghrsDaysLimit",
       "config.attendancePolicies.earlyExitPenaltyAmt",
       "config.attendancePolicies.extraHoursPay",
@@ -156,6 +156,8 @@ async function fetchSalaryBreakdown(ItemsService, req, employeeIds) {
       "advance",
       "id",
       "salaryTracking",
+      "statutory",
+      "country",
     ],
     limit: -1,
   });
@@ -497,6 +499,19 @@ function getMonthlyCTCFromTracking(salaryTracking, endDate) {
 
   return entries.length > 0 ? entries[0].value : 0;
 }
+function getCountryFromBreakdown(salaryBreakdown, endDate) {
+  const { year, month } = getYearMonth(endDate);
+
+  if (!salaryBreakdown?.country || salaryBreakdown.country === null) {
+    return null;
+  }
+
+  const countryExact =
+    salaryBreakdown.country[year]?.[month] ||
+    findNearestPreviousMonth(salaryBreakdown.country, year, month);
+
+  return countryExact || null;
+}
 // ==================== EARNINGS & DEDUCTIONS FROM SALARY BREAKDOWN ====================
 
 function getEarningsFromBreakdown(salaryBreakdown, endDate) {
@@ -746,6 +761,113 @@ async function getEmployerContributionsFromBreakdown(
     esiLimit,
   };
 }
+// ADD THIS NEW FUNCTION after getEmployerContributionsFromBreakdown:
+
+function getStatutoryContributionsFromBreakdown(
+  salaryBreakdown,
+  endDate,
+  adjustedEarnings
+) {
+  const { year, month } = getYearMonth(endDate);
+
+  console.log("🗓 Processing Statutory Contributions for:", { year, month });
+
+  const monthlyData =
+    salaryBreakdown?.statutory?.[year]?.[month] ||
+    findNearestPreviousMonth(salaryBreakdown?.statutory, year, month) ||
+    {};
+
+  console.log("📦 Statutory Monthly Data:", monthlyData);
+
+  const resolveCalculationAmount = (config) => {
+    if (!config?.components || !Array.isArray(config.components)) return 0;
+
+    let total = 0;
+    config.components.forEach((compName) => {
+      const amount = adjustedEarnings[compName];
+      console.log(`🧮 Resolving Statutory Component [${compName}]:`, amount);
+      if (typeof amount === "number") total += amount;
+    });
+    return total;
+  };
+
+  // Calculate Employee PF from statutory
+  const empPFConfig = monthlyData.EmployeePF || {};
+  console.log("🧩 Statutory Employee PF Config:", empPFConfig);
+
+  let employeePF = 0;
+  let employeePFBase = 0;
+  const empPFConfigData = {};
+
+  if (empPFConfig.selectedOption && empPFConfig.selectedOption !== "No Value") {
+    const baseAmount = resolveCalculationAmount(empPFConfig);
+    console.log("📊 Statutory Employee PF Base Amount:", baseAmount);
+    employeePFBase = baseAmount;
+    Object.assign(empPFConfigData, empPFConfig);
+
+    const percentageMatch = empPFConfig.selectedOption.match(/[\d.]+/);
+    if (percentageMatch) {
+      const percentage = parseFloat(percentageMatch[0]) / 100;
+      employeePF = baseAmount * percentage;
+    }
+  }
+
+  // Calculate Employer PF from statutory
+  const empRPFConfig = monthlyData.EmployerPF || {};
+  console.log("🧩 Statutory Employer PF Config:", empRPFConfig);
+
+  let employerPF = 0;
+  let employerPFBase = 0;
+  const empRPFConfigData = {};
+
+  if (
+    empRPFConfig.selectedOption &&
+    empRPFConfig.selectedOption !== "No Value"
+  ) {
+    const baseAmount = resolveCalculationAmount(empRPFConfig);
+    console.log("📊 Statutory Employer PF Base Amount:", baseAmount);
+    employerPFBase = baseAmount;
+    Object.assign(empRPFConfigData, empRPFConfig);
+
+    const percentageMatch = empRPFConfig.selectedOption.match(/[\d.]+/);
+    if (percentageMatch) {
+      const percentage = parseFloat(percentageMatch[0]) / 100;
+      employerPF = baseAmount * percentage;
+    }
+  }
+
+  // Calculate Government PF from statutory
+  const govPFConfig = monthlyData.GovernmentPF || {};
+  console.log("🧩 Statutory Government PF Config:", govPFConfig);
+
+  let governmentPF = 0;
+  let governmentPFBase = 0;
+  const govPFConfigData = {};
+
+  if (govPFConfig.selectedOption && govPFConfig.selectedOption !== "No Value") {
+    const baseAmount = resolveCalculationAmount(govPFConfig);
+    governmentPFBase = baseAmount;
+    Object.assign(govPFConfigData, govPFConfig);
+
+    const percentageMatch = govPFConfig.selectedOption.match(/[\d.]+/);
+    if (percentageMatch) {
+      const percentage = parseFloat(percentageMatch[0]) / 100;
+      governmentPF = baseAmount * percentage;
+    }
+  }
+
+  return {
+    employeePF: Math.round(employeePF),
+    employeePFBase: Math.round(employeePFBase),
+    employeePFConfig: empPFConfigData,
+    employerPF: Math.round(employerPF),
+    employerPFBase: Math.round(employerPFBase),
+    employerPFConfig: empRPFConfigData,
+    governmentPF: Math.round(governmentPF),
+    governmentPFBase: Math.round(governmentPFBase),
+    governmentPFConfig: govPFConfigData,
+  };
+}
 
 // ==================== ADJUSTMENT FOR PAYABLE DAYS ====================
 
@@ -890,7 +1012,7 @@ function calculateLateEntryPenalty(
     (totalAttendanceCount?.totalLateDuration || "0:0").split(":")[0]
   );
 
-  if (attendancePolicy.lateComingDayMode === "Custom Multiplier") {
+  if (attendancePolicy.lateCommingFineType === "Custom Multiplier") {
     return penaltyAmount * perHourSalary * hoursOnly;
   }
   return penaltyAmount * hoursOnly;
@@ -908,17 +1030,32 @@ function calculateEarlyLeavingPenalty(
     (totalAttendanceCount?.totalEarlyDuration || "0:0").split(":")[0]
   );
 
-  if (attendancePolicy.earlyLeavingDayMode === "Custom Multiplier") {
+  if (attendancePolicy.earlyLeavingfineType === "Custom Multiplier") {
     return penaltyAmount * perHourSalary * hoursOnly;
   }
   return penaltyAmount * hoursOnly;
 }
 
-function calculateWorkingHourPenalty(attendancePolicy, totalAttendanceCount) {
-  if (attendancePolicy?.workingHoursType !== "fixed") return 0;
+function calculateWorkingHourPenalty(
+  attendancePolicy,
+  totalAttendanceCount,
+  perHourSalary
+) {
+  const workingHoursShortage = totalAttendanceCount?.workingHours || 0;
 
-  const penaltyAmount = Number(attendancePolicy.workingHoursAmount || 0);
-  return (totalAttendanceCount?.workingHours || 0) * penaltyAmount;
+  if (!workingHoursShortage) return 0;
+
+  const penaltyType = attendancePolicy?.workingHoursType;
+  const penaltyAmount = Number(attendancePolicy?.workingHoursAmount || 0);
+  const penaltyMode = attendancePolicy?.wrkHoursFineType;
+
+  if (penaltyType !== "fixed") return 0;
+
+  if (penaltyMode === "Custom Multiplier") {
+    return workingHoursShortage * (penaltyAmount * perHourSalary);
+  } else {
+    return workingHoursShortage * penaltyAmount;
+  }
 }
 
 function calculateOvertimePay(
@@ -933,33 +1070,46 @@ function calculateOvertimePay(
   const weekOffOT = parseHours(totalAttendanceCount?.weekOffOTHours);
   const holidayOT = parseHours(totalAttendanceCount?.holidayOTHours);
 
-  const calculatePay = (hours, type, payField) => {
-    if (!hours) return 0;
+  let workingHoursOTPay = 0;
+  if (workingHoursOT > 0) {
+    const otType = attendancePolicy?.extraHoursType;
+    const otPayValue = Number(attendancePolicy?.extraHoursPay || 0);
 
-    switch (attendancePolicy?.[type]) {
-      case "Custom Multiplier":
-        return (
-          hours * (Number(attendancePolicy?.[payField] || 1) * perHourSalary)
-        );
-      case "Fixed Hourly Rate":
-        return hours * Number(attendancePolicy?.[payField] || 0);
-      default:
-        return 0;
+    if (otType === "Custom Multiplier") {
+      workingHoursOTPay = workingHoursOT * (otPayValue * perHourSalary);
+    } else if (otType === "Fixed Hourly Rate") {
+      workingHoursOTPay = workingHoursOT * otPayValue;
     }
-  };
+  }
+
+  let weekOffOTPay = 0;
+  if (weekOffOT > 0) {
+    const otType = attendancePolicy?.weekOffType;
+    const otPayValue = Number(attendancePolicy?.weekOffPay || 0);
+
+    if (otType === "Custom Multiplier") {
+      weekOffOTPay = weekOffOT * (otPayValue * perHourSalary);
+    } else if (otType === "Fixed Hourly Rate") {
+      weekOffOTPay = weekOffOT * otPayValue;
+    }
+  }
+
+  let holidayOTPay = 0;
+  if (holidayOT > 0) {
+    const otType = attendancePolicy?.publicHolidayType;
+    const otPayValue = Number(attendancePolicy?.publicHolidayPay || 0);
+
+    if (otType === "Custom Multiplier") {
+      holidayOTPay = holidayOT * (otPayValue * perHourSalary);
+    } else if (otType === "Fixed Hourly Rate") {
+      holidayOTPay = holidayOT * otPayValue;
+    }
+  }
 
   return {
-    workingHoursOTPay: calculatePay(
-      workingHoursOT,
-      "workingHoursType",
-      "extraHoursPay"
-    ),
-    weekOffOTPay: calculatePay(weekOffOT, "weekOffType", "weekOffPay"),
-    holidayOTPay: calculatePay(
-      holidayOT,
-      "publicHolidayType",
-      "publicHolidayPay"
-    ),
+    workingHoursOTPay,
+    weekOffOTPay,
+    holidayOTPay,
   };
 }
 
@@ -1004,7 +1154,7 @@ async function processEmployeeData(
   const gender = personal?.assignedUser?.gender || null;
   const salaryTracking = salaryBreakdown?.salaryTracking;
   const monthlyCtc = getMonthlyCTCFromTracking(salaryTracking, endDate) || 0;
-
+  const country = getCountryFromBreakdown(salaryBreakdown, endDate);
   // ===== STEP 1: Extract data from SalaryBreakdown =====
 
   const rawEarnings = getEarningsFromBreakdown(salaryBreakdown, endDate);
@@ -1017,59 +1167,27 @@ async function processEmployeeData(
     endDate,
     "LWF"
   );
-  console.log("[DEBUG] LWF stateId:", lwfStateId);
-  console.log("[DEBUG] Available state rules:", Object.keys(stateTaxRules)); // ADD THIS
-
   const lwf =
     lwfStateId && stateTaxRules[lwfStateId]
       ? getLWFFromRules(stateTaxRules[lwfStateId], startDate, endDate) // CHANGED: Pass startDate
       : { employerLWF: 0, employeeLWF: 0, state: null };
-  console.log("[DEBUG] LWF result:", lwf);
   const { month } = getYearMonth(endDate);
   // === PT: Special month override ===
 
   const ptStateId = extractStateIdFromBreakdown(salaryBreakdown, endDate, "PT");
-  console.log("[DEBUG] PT stateId:", ptStateId);
-  console.log(
-    "[DEBUG] stateTaxRules available keys:",
-    Object.keys(stateTaxRules)
-  ); // ADD THIS
-  console.log(
-    "[DEBUG] stateTaxRules[ptStateId]:",
-    ptStateId ? JSON.stringify(stateTaxRules[ptStateId], null, 2) : "N/A"
-  ); // ADD THIS
 
   let pt = 0;
 
   if (ptStateId && stateTaxRules[ptStateId]) {
-    const rules = stateTaxRules[ptStateId]; // This now contains {PT: [...], PtMonth: {...}, LWF: {...}}
-
-    console.log(
-      `[DEBUG] Using rules for state ${ptStateId}:`,
-      JSON.stringify(rules, null, 2)
-    ); // ADD THIS
+    const rules = stateTaxRules[ptStateId];
 
     // Check for special month override FIRST
     if (rules.PtMonth?.Month === month) {
       pt = rules.PtMonth.professionalTax || 0;
-      console.log(
-        `[DEBUG] ✅ PT Special Month Match! Month=${month} → PT = ${pt}`
-      ); // CHANGED
+      // CHANGED
     } else {
-      console.log(
-        `[DEBUG] No special month (rules.PtMonth.Month=${rules.PtMonth?.Month}, current=${month}), calculating from slab...`
-      ); // ADD THIS
       pt = calculatePTFromRules(rules, gender, monthlyCtc, month);
-      console.log(`[DEBUG] PT from slab calculation: ${pt}`); // ADD THIS
     }
-
-    console.log(`[DEBUG] ✅ Final PT for state ${ptStateId}: ${pt}`); // CHANGED
-  } else {
-    console.log(
-      `[DEBUG] ❌ No PT calculation - ptStateId: ${ptStateId}, has rules: ${!!stateTaxRules[
-        ptStateId
-      ]}`
-    ); // ADD THIS
   }
 
   // ===== STEP 3: Adjust earnings and deductions for payable days =====
@@ -1101,43 +1219,11 @@ async function processEmployeeData(
     monthlyCtc,
     esiLimit
   );
-  // const adjustedEmployeeDeductions = {
-  //   employeePF:
-  //     (employeeDeductions.employeePF / Number(totalDays)) * payableDays,
-  //   employeePFBase:
-  //     (employeeDeductions.employeePFBase / Number(totalDays)) * payableDays,
-  //   employeePFConfig: employeeDeductions.employeePFConfig, // ADD THIS LINE
-  //   employeeESI:
-  //     (employeeDeductions.employeeESI / Number(totalDays)) * payableDays,
-  //   employeeESIBase:
-  //     (employeeDeductions.employeeESIBase / Number(totalDays)) * payableDays,
-  //   employeeESIConfig: employeeDeductions.employeeESIConfig, // ADD THIS LINE
-  //   voluntaryPF:
-  //     (employeeDeductions.voluntaryPF / Number(totalDays)) * payableDays,
-  // };
-
-  // const adjustedEmployerContributions = {
-  //   employerPF: {
-  //     amount:
-  //       (employerContributions.employerPF.amount / Number(totalDays)) *
-  //       payableDays,
-  //     // ADD THIS
-  //     baseAmount:
-  //       (employerContributions.employerPF.baseAmount / Number(totalDays)) *
-  //       payableDays,
-  //     includedInCTC: employerContributions.employerPF.includedInCTC,
-  //   },
-  //   employerESI: {
-  //     amount:
-  //       (employerContributions.employerESI.amount / Number(totalDays)) *
-  //       payableDays,
-  //     // ADD THIS
-  //     baseAmount:
-  //       (employerContributions.employerESI.baseAmount / Number(totalDays)) *
-  //       payableDays,
-  //     includedInCTC: employerContributions.employerESI.includedInCTC,
-  //   },
-  // };
+  const statutoryContributions = getStatutoryContributionsFromBreakdown(
+    salaryBreakdown,
+    endDate,
+    adjustedEarnings
+  );
 
   // ===== STEP 4: Calculate Admin Charges =====
   const adminConfig = personal?.config?.adminCharges;
@@ -1268,12 +1354,30 @@ async function processEmployeeData(
     employeeId: personal?.employeeId || null,
     name: personal?.assignedUser?.first_name || "",
     monthlyCtc: monthlyCtc || 0,
-
+    country: country,
     earnings: adjustedEarnings,
     deduction: adjustedDeductions,
 
     employerContributions: employerContributionsFormatted,
     employeeDeductions: employeeDeductionsFormatted,
+
+    statutoryContributions: {
+      employeePF: {
+        amount: statutoryContributions.employeePF,
+        baseAmount: statutoryContributions.employeePFBase,
+        ...statutoryContributions.employeePFConfig,
+      },
+      employerPF: {
+        amount: statutoryContributions.employerPF,
+        baseAmount: statutoryContributions.employerPFBase,
+        ...statutoryContributions.employerPFConfig,
+      },
+      governmentPF: {
+        amount: statutoryContributions.governmentPF,
+        baseAmount: statutoryContributions.governmentPFBase,
+        ...statutoryContributions.governmentPFConfig,
+      },
+    },
 
     adminCharge: adminCharge,
     employerLwf: lwf.employerLWF,

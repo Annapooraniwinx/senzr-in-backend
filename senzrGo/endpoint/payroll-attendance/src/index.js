@@ -390,9 +390,10 @@ module.exports = function registerEndpoint(router, { services }) {
 
           // Working Hours Logic
           if (
+            record.workHours !== "00:00:00" &&
             record.workHours <
-            personalModuleMap[record.employeeId]?.config?.attendancePolicies
-              ?.setMinWorkingHours
+              personalModuleMap[record.employeeId]?.config?.attendancePolicies
+                ?.setMinWorkingHours
           ) {
             const workingHoursType =
               personalModuleMap[record.employeeId]?.config?.attendancePolicies
@@ -451,10 +452,13 @@ module.exports = function registerEndpoint(router, { services }) {
           const otEnabled =
             personalModuleMap[record.employeeId]?.config?.attendancePolicies
               ?.isOverTime;
+          const OTMinimumHrs =
+            personalModuleMap[record.employeeId]?.config?.attendancePolicies
+              ?.setOverTimeLimit;
           switch (record.attendance) {
             case "present":
               // empData.totalPayableDays += 1;
-              if (otEnabled && record.overTime !== "00:00:00") {
+              if (otEnabled && record.overTime > OTMinimumHrs) {
                 empData.workingDayOT += 1;
                 empData.workingDayOTHours = addTime(
                   empData.workingDayOTHours || "00:00:00",
