@@ -12,13 +12,17 @@ export default ({ action }, { services, database }) => {
     // Only run for tenant collection
     if (collection !== "tenant") return;
 
-    console.log(
-      "🏁surthi Heina Jeson Tenant created! Starting additional setup..."
-    );
+    console.log("🏁Heina Jeson Tenant created! Starting additional setup...");
 
     const tenantId = key;
     let employeeId = null;
     let personalId = null;
+    let employeeDetails = {
+      firstName: null,
+      email: null,
+      phone: null,
+    };
+
     const errorService = new ItemsService("registration_errors", {
       schema,
       accountability,
@@ -31,10 +35,25 @@ export default ({ action }, { services, database }) => {
       shift: null,
       personalModule: null,
       salaryBreakdown: null,
-      configs: [],
       leaves: null,
       tenantTemplates: [],
     };
+
+    // === NODEMAILER SETUP ===
+    let transporter = null;
+    try {
+      const nodemailer = (await import("nodemailer")).default;
+      transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+          user: "fieldopsbysenzr@gmail.com",
+          pass: "gokz sdtc zbnm dmep",
+        },
+      });
+      console.log("📧 Email transporter initialized");
+    } catch (err) {
+      console.error("❌ Failed to initialize email transporter:", err.message);
+    }
 
     // === DYNAMIC AWS SDK LOADING (INSIDE ACTION) ===
     let s3 = null;
@@ -71,7 +90,14 @@ export default ({ action }, { services, database }) => {
         // Initial attempt
         let personalItems = await personalService.readByQuery({
           filter: { assignedUser: { tenant: { _eq: tenantId } } },
-          fields: ["id", "employeeId", "assignedUser.id"],
+          fields: [
+            "id",
+            "employeeId",
+            "assignedUser.id",
+            "assignedUser.first_name",
+            "assignedUser.email",
+            "assignedUser.phone",
+          ],
           limit: 1,
         });
 
@@ -92,6 +118,9 @@ export default ({ action }, { services, database }) => {
               "id",
               "employeeId",
               "assignedUser.id",
+              "assignedUser.first_name",
+              "assignedUser.email",
+              "assignedUser.phone",
               "assignedUser.tenant.tenantName",
               "assignedUser.tenant.companyAddress",
             ],
@@ -116,16 +145,206 @@ export default ({ action }, { services, database }) => {
       }
     };
 
+    // === SEND EMAIL FUNCTION ===
+    const sendStatusEmail = async (
+      status,
+      failedCollection = null,
+      errorMsg = null
+    ) => {
+      if (!transporter) {
+        console.warn("⚠️ Email transporter not available, skipping email");
+        return;
+      }
+
+      try {
+        const tenantService = new ItemsService("tenant", {
+          schema,
+          accountability,
+        });
+        const tenant = await tenantService.readOne(tenantId, {
+          fields: ["tenantName", "companyAddress", "date_created"],
+        });
+
+        const tenantName = (tenant.tenantName ?? "Unnamed Tenant").trim();
+        const companyAddress = (tenant.companyAddress ?? "Not provided").trim();
+        const createdAt = new Date(tenant.date_created).toLocaleString(
+          "en-IN",
+          {
+            timeZone: "Asia/Kolkata",
+            dateStyle: "full",
+            timeStyle: "medium",
+          }
+        );
+
+        const statusEmoji = status === "success" ? "✅" : "❌";
+        const statusText =
+          status === "success" ? "Successfully Onboarded" : "Onboarding Failed";
+        const statusColor = status === "success" ? "#10b981" : "#ef4444";
+
+        const htmlBody = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Tenant ${statusText}</title>
+  <style>
+    body {font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;background:#f4f7fa;margin:0;padding:0;}
+    .container {max-width:620px;margin:30px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,.1);}
+    .header {background:#ffffff;color:#333;padding:30px;text-align:center;border-bottom:1px solid #eee;}
+    .header h1 {margin:0;font-size:24px;font-weight:600;color:${statusColor};}
+    .content {padding:30px;color:#333;}
+    .info-box {background:#f8fafc;padding:15px;border-radius:8px;margin:15px 0;}
+    .error-box {background:#fee;padding:15px;border-radius:8px;margin:15px 0;border-left:4px solid #ef4444;}
+    .footer {background:#f8fafc;padding:20px;text-align:center;color:#64748b;font-size:13px;}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>${statusEmoji} Tenant ${statusText}</h1>
+      <p>Tenant registration ${
+        status === "success" ? "completed successfully" : "encountered an error"
+      }</p>
+    </div>
+
+    <div class="content">
+      <p><strong>Hello Team,</strong></p>
+
+      <h2 style="color:#4f46e5;font-size:18px;">Tenant Information</h2>
+      <div class="info-box">
+        <p><strong>Tenant Name:</strong> ${tenantName}</p>
+        <p><strong>Tenant ID:</strong> ${tenantId}</p>
+        <p><strong>Address:</strong> ${companyAddress}</p>
+        <p><strong>Created:</strong> ${createdAt}</p>
+      </div>
+
+      ${
+        employeeDetails.firstName
+          ? `
+      <h2 style="color:#4f46e5;font-size:18px;">Contact Details</h2>
+      <div class="info-box">
+        <p><strong>Name:</strong> ${employeeDetails.firstName}</p>
+        <p><strong>Email:</strong> ${
+          employeeDetails.email || "Not provided"
+        }</p>
+        <p><strong>Phone:</strong> ${
+          employeeDetails.phone || "Not provided"
+        }</p>
+        <p><strong>Employee ID:</strong> ${employeeId}</p>
+      </div>
+      `
+          : ""
+      }
+
+      ${
+        status === "success"
+          ? `
+      <h2 style="color:#10b981;font-size:18px;">✅ Setup Completed</h2>
+      <p style="margin-top:15px;">All resources have been configured successfully:</p>
+      <ul>
+        <li>S3 bucket and folders created</li>
+        <li>Admin and Employee roles configured</li>
+        <li>Default salary settings applied</li>
+        <li>Attendance cycle and shifts created</li>
+        <li>Leave management initialized</li>
+        <li>Organization structure set up</li>
+        <li>Salary breakdown configured</li>
+        <li>Tenant templates applied</li>
+      </ul>
+      `
+          : `
+      <h2 style="color:#ef4444;font-size:18px;">❌ Setup Failed</h2>
+      <div class="error-box">
+        <p><strong>Failed at:</strong> ${failedCollection || "Unknown"}</p>
+        <p><strong>Error:</strong> ${errorMsg || "No details available"}</p>
+      </div>
+      <p><strong>Action Required:</strong> Please check the logs and retry the setup process.</p>
+      `
+      }
+
+      <hr style="border:0;border-top:1px solid #eee;margin:30px 0;" />
+      <p style="font-size:14px;color:#666;">
+        This is an automated notification from the <strong>FieldOps Tenant Onboarding System</strong>.
+      </p>
+    </div>
+
+    <div class="footer">
+      <p>© ${new Date().getFullYear()} Senzr AIOT Partner Edge to Cloud. All rights reserved.</p>
+      <p>FieldOps • Enterprise Field Operations Platform</p>
+    </div>
+  </div>
+</body>
+</html>`;
+
+        const textBody = `
+Tenant ${statusText}:
+
+Tenant Name: ${tenantName}
+Tenant ID: ${tenantId}
+Address: ${companyAddress}
+Registered: ${createdAt}
+
+${
+  employeeDetails.firstName
+    ? `
+Primary Contact:
+Name: ${employeeDetails.firstName}
+Email: ${employeeDetails.email || "Not provided"}
+Phone: ${employeeDetails.phone || "Not provided"}
+Employee ID: ${employeeId}
+`
+    : ""
+}
+
+${
+  status === "success"
+    ? "All resources configured successfully."
+    : `Failed at: ${failedCollection}\nError: ${errorMsg}`
+}
+
+Automated message from FieldOps by Senzr.
+        `.trim();
+
+        const mailOptions = {
+          from: `"FieldOps by Senzr" <fieldopsbysenzr@gmail.com>`,
+          to: "connect@iwinxdigital.com",
+          cc: "jasper@senzr.in, annapoorani@iwinxdigital.com",
+          subject: `${statusEmoji} Tenant ${statusText}: ${tenantName}`,
+          html: htmlBody,
+          text: textBody,
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log(
+          `📧 ${
+            status === "success" ? "Success" : "Failure"
+          } email sent! Message ID:`,
+          info.messageId
+        );
+      } catch (error) {
+        console.error("🚨 Failed to send email:", error.message);
+      }
+    };
+
     try {
       // Fetch personalModule with modified retry
       try {
         const personalItem = await waitForPersonalModule();
         personalId = personalItem.id;
         employeeId = personalItem.employeeId;
+
+        // Extract employee details
+        if (personalItem.assignedUser) {
+          employeeDetails.firstName =
+            personalItem.assignedUser.first_name || null;
+          employeeDetails.email = personalItem.assignedUser.email || null;
+          employeeDetails.phone = personalItem.assignedUser.phone || null;
+        }
+
         createdResources.personalModule = personalId;
         pendingCollections.push("personalModule");
         console.log(
-          `🔍 Fetched personalModule: { id: ${personalId}, employeeId: ${employeeId} }`
+          `🔍 Fetched personalModule: { id: ${personalId}, employeeId: ${employeeId}, name: ${employeeDetails.firstName} }`
         );
       } catch (error) {
         console.error("❌ Error fetching personal module:", error);
@@ -141,11 +360,11 @@ export default ({ action }, { services, database }) => {
             "leave",
             "organization",
             "SalaryBreakdown",
-            "config",
             "tenant_template",
           ],
           status: "failed",
         });
+        await sendStatusEmail("failed", "personalModule", error.message);
         return;
       }
 
@@ -258,7 +477,6 @@ export default ({ action }, { services, database }) => {
           failed_collection: "directus_folders",
           error_response: { message: error.message, stack: error.stack },
           pending_collections: [
-            "directus_folders",
             "roleConfigurator",
             "salarySetting",
             "attendanceCycle",
@@ -266,11 +484,11 @@ export default ({ action }, { services, database }) => {
             "leave",
             "organization",
             "SalaryBreakdown",
-            "config",
             "tenant_template",
           ],
           status: "failed",
         });
+        await sendStatusEmail("failed", "directus_folders", error.message);
         return;
       }
       pendingCollections.push("directus_folders");
@@ -279,7 +497,6 @@ export default ({ action }, { services, database }) => {
       if (s3) {
         try {
           const tenantPrefix = `${tenantId}/`;
-
           await s3
             .putObject({
               Bucket: BUCKET,
@@ -370,6 +587,7 @@ export default ({ action }, { services, database }) => {
           tab_access: {
             Overview: { Overview: true },
             "Clients & Sites": { "Clients & Sites": true },
+            Products: { Products: true },
             "Work Orders": { "Work Orders": true, smartforms: true },
             Employees: {
               Employees: true,
@@ -430,13 +648,15 @@ export default ({ action }, { services, database }) => {
             },
             "Organization Settings": { "Organization Settings": true },
             "Subscription & Plans": { "Subscription & Plans": true },
+            Compliance: { Compliance: true },
+            "Live Tracking": { "Live Tracking": true },
             Uploads: { Uploads: true },
             Routes: { Routes: true },
           },
         };
         adminRoleId = await roleConfigService.createOne(adminPayload);
         createdResources.adminRoleConfig = adminRoleId;
-        console.log(`⏰Created Admin roleConfigurator id=${adminRoleId}`);
+        console.log(`👤 Created Admin roleConfigurator id=${adminRoleId}`);
 
         // ---- EMPLOYEE ROLE CONFIG ----
         const employeePayload = {
@@ -487,9 +707,11 @@ export default ({ action }, { services, database }) => {
 
         employeeRoleId = await roleConfigService.createOne(employeePayload);
         createdResources.employeeRoleConfig = employeeRoleId;
-        console.log(`⏰Created Employee roleConfigurator id=${employeeRoleId}`);
+        console.log(
+          `👤 Created Employee roleConfigurator id=${employeeRoleId}`
+        );
       } catch (error) {
-        console.error("❌Error creating default role configurators:", error);
+        console.error("❌ Error creating default role configurators:", error);
         await errorService.createOne({
           tenantId,
           employeeId: personalId || null,
@@ -502,11 +724,12 @@ export default ({ action }, { services, database }) => {
             "leave",
             "organization",
             "SalaryBreakdown",
-            "config",
             "tenant_template",
           ],
           status: "failed",
         });
+        await sendStatusEmail("failed", "roleConfigurator", error.message);
+        return;
       }
 
       // === DEFAULT SALARY SETTING (Custom) ===
@@ -573,9 +796,9 @@ export default ({ action }, { services, database }) => {
           salarySettingPayload
         );
         createdResources.salarySetting = salarySettingId;
-        console.log(`🧑‍💼Created salarySetting (Custom) id=${salarySettingId}`);
+        console.log(`💰 Created salarySetting (Custom) id=${salarySettingId}`);
       } catch (error) {
-        console.error("❌Error creating default salarySetting:", error);
+        console.error("❌ Error creating default salarySetting:", error);
         await errorService.createOne({
           tenantId,
           employeeId: personalId || null,
@@ -587,11 +810,12 @@ export default ({ action }, { services, database }) => {
             "leave",
             "organization",
             "SalaryBreakdown",
-            "config",
             "tenant_template",
           ],
           status: "failed",
         });
+        await sendStatusEmail("failed", "salarySetting", error.message);
+        return;
       }
 
       // === ATTENDANCE CYCLE ===
@@ -627,15 +851,9 @@ export default ({ action }, { services, database }) => {
         };
         attendanceCycleId = await cycleService.createOne(cyclePayload);
         createdResources.attendanceCycle = attendanceCycleId;
-        console.log(
-          `⏰ Created attendanceCycle: { id: ${attendanceCycleId}, tenant: ${tenantId}, cycles: ${JSON.stringify(
-            cyclePayload.multi_attendance_cycle.cycles,
-            null,
-            2
-          )} }`
-        );
+        console.log(`📅 Created attendanceCycle id=${attendanceCycleId}`);
       } catch (error) {
-        console.error("Error creating attendance cycle:", error);
+        console.error("❌ Error creating attendance cycle:", error);
         await errorService.createOne({
           tenantId,
           employeeId: personalId || null,
@@ -646,11 +864,11 @@ export default ({ action }, { services, database }) => {
             "leave",
             "organization",
             "SalaryBreakdown",
-            "config",
             "tenant_template",
           ],
           status: "failed",
         });
+        await sendStatusEmail("failed", "attendanceCycle", error.message);
         return;
       }
       pendingCollections.push("attendanceCycle");
@@ -672,9 +890,7 @@ export default ({ action }, { services, database }) => {
         };
         shiftId = await shiftService.createOne(shiftPayload);
         createdResources.shift = shiftId;
-        console.log(
-          `🕒 Created shift: { id: ${shiftId}, shift: ${shiftPayload.shift}, tenant: ${tenantId} }`
-        );
+        console.log(`🕒 Created shift id=${shiftId}`);
       } catch (error) {
         console.error("❌ Error creating shift:", error);
         await errorService.createOne({
@@ -686,11 +902,11 @@ export default ({ action }, { services, database }) => {
             "leave",
             "organization",
             "SalaryBreakdown",
-            "config",
             "tenant_template",
           ],
           status: "failed",
         });
+        await sendStatusEmail("failed", "shifts", error.message);
         return;
       }
       pendingCollections.push("shifts");
@@ -714,9 +930,7 @@ export default ({ action }, { services, database }) => {
         };
         leavesId = await leavesService.createOne(leavesPayload);
         createdResources.leaves = leavesId;
-        console.log(
-          `🍃 Created leave: { id: ${leavesId}, uniqueId: ${leavesPayload.uniqueId}, tenant: ${tenantId} }`
-        );
+        console.log(`🍃 Created leave id=${leavesId}`);
       } catch (error) {
         console.error("❌ Error creating leaves:", error);
         await errorService.createOne({
@@ -727,11 +941,11 @@ export default ({ action }, { services, database }) => {
           pending_collections: [
             "organization",
             "SalaryBreakdown",
-            "config",
             "tenant_template",
           ],
           status: "failed",
         });
+        await sendStatusEmail("failed", "leave", error.message);
         return;
       }
       pendingCollections.push("leave");
@@ -763,19 +977,19 @@ export default ({ action }, { services, database }) => {
         const orgId = orgData.id || orgData;
         createdResources.organization = orgId;
 
-        console.log(
-          `## Organization created: { id: ${orgId}, name: "${companyName}", address: "${companyAddress}" }`
-        );
+        console.log(`🏢 Organization created id=${orgId}`);
       } catch (error) {
-        console.error("Failed to create organization:", error);
+        console.error("❌ Failed to create organization:", error);
         await errorService.createOne({
           tenantId,
           employeeId: personalId || null,
           failed_collection: "organization",
           error_response: { message: error.message, stack: error.stack },
-          pending_collections: ["config", "tenant_template"],
+          pending_collections: ["SalaryBreakdown", "tenant_template"],
           status: "failed",
         });
+        await sendStatusEmail("failed", "organization", error.message);
+        return;
       }
 
       // === PATCH PERSONAL MODULE ===
@@ -820,9 +1034,7 @@ export default ({ action }, { services, database }) => {
           },
         };
         await personalService.updateOne(personalId, personalUpdatePayload);
-        console.log(
-          `🧑‍💼 Patched personalModule: { id: ${personalId}, uniqueId: ${personalUpdatePayload.uniqueId}, leaves: ${leavesId}, roleConfig: ${adminRoleId} }`
-        );
+        console.log(`🧑‍💼 Patched personalModule id=${personalId}`);
       } catch (error) {
         console.error("❌ Error patching personal module:", error);
         await errorService.createOne({
@@ -830,9 +1042,10 @@ export default ({ action }, { services, database }) => {
           employeeId: personalId || null,
           failed_collection: "personalModule",
           error_response: { message: error.message, stack: error.stack },
-          pending_collections: ["SalaryBreakdown", "config", "tenant_template"],
+          pending_collections: ["SalaryBreakdown", "tenant_template"],
           status: "failed",
         });
+        await sendStatusEmail("failed", "personalModule_update", error.message);
         return;
       }
 
@@ -848,9 +1061,7 @@ export default ({ action }, { services, database }) => {
         };
         const salaryId = await salaryService.createOne(salaryPayload);
         createdResources.salaryBreakdown = salaryId;
-        console.log(
-          `💰 Created SalaryBreakdown: { id: ${salaryId}, employee: ${personalId}, tenant: ${tenantId} }`
-        );
+        console.log(`💵 Created SalaryBreakdown id=${salaryId}`);
       } catch (error) {
         console.error("❌ Error creating salary breakdown:", error);
         await errorService.createOne({
@@ -858,51 +1069,13 @@ export default ({ action }, { services, database }) => {
           employeeId: personalId || null,
           failed_collection: "SalaryBreakdown",
           error_response: { message: error.message, stack: error.stack },
-          pending_collections: ["config", "tenant_template"],
+          pending_collections: ["tenant_template"],
           status: "failed",
         });
+        await sendStatusEmail("failed", "SalaryBreakdown", error.message);
         return;
       }
       pendingCollections.push("SalaryBreakdown");
-
-      // Create default templates (configs)
-      const defaultTemplates = [
-        { name: "Regular Staff", type: "regular" },
-        { name: "Housekeeping Employee", type: "housekeeping" },
-        { name: "Security Staff", type: "security" },
-        { name: "Flex Shifts", type: "flex" },
-      ];
-      for (const template of defaultTemplates) {
-        try {
-          const configService = new ItemsService("config", {
-            schema,
-            accountability,
-          });
-          const configPayload = {
-            configName: template.name,
-            tenant: tenantId,
-            attendancePolicies: { locationCentric: false },
-            salarySettings: { status: "draft" },
-          };
-          const configId = await configService.createOne(configPayload);
-          createdResources.configs.push(configId);
-          console.log(
-            `⚙️ Created config: { id: ${configId}, configName: ${template.name}, tenant: ${tenantId} }`
-          );
-        } catch (error) {
-          console.error(`❌ Error creating config ${template.name}:`, error);
-          await errorService.createOne({
-            tenantId,
-            employeeId: personalId || null,
-            failed_collection: "config",
-            error_response: { message: error.message, stack: error.stack },
-            pending_collections: ["tenant_template"],
-            status: "failed",
-          });
-          return;
-        }
-      }
-      pendingCollections.push("config");
 
       // === TENANT TEMPLATES ===
       try {
@@ -928,23 +1101,19 @@ export default ({ action }, { services, database }) => {
             enableForm: template.enableForm || true,
             tenant: tenantId,
             assignedOrgnization: null,
+            templateId: template.id,
           };
           const tenantTemplateId = await tenantTemplateService.createOne(
             tenantTemplatePayload
           );
           createdResources.tenantTemplates.push(tenantTemplateId);
-          console.log(
-            `Created tenant_template: { id: ${tenantTemplateId}, formName: ${template.formName}, tenant: ${tenantId} }`
-          );
+          console.log(`📋 Created tenant_template id=${tenantTemplateId}`);
         }
         console.log(
           `✅ Created ${createdResources.tenantTemplates.length} tenant templates`
         );
       } catch (error) {
-        console.error(
-          "❌ Error creating tenant templates from form templates:",
-          error
-        );
+        console.error("❌ Error creating tenant templates:", error);
         await errorService.createOne({
           tenantId,
           employeeId: personalId || null,
@@ -953,14 +1122,16 @@ export default ({ action }, { services, database }) => {
           pending_collections: [],
           status: "failed",
         });
+        await sendStatusEmail("failed", "tenant_template", error.message);
         return;
       }
       pendingCollections.push("tenant_template");
 
-      // === FINAL SUCCESS LOG ===
+      // === FINAL SUCCESS ===
       console.log(
         `🎉 All resources created successfully for tenant: ${tenantId}`
       );
+
       await errorService.createOne({
         tenantId,
         employeeId: personalId || null,
@@ -970,8 +1141,11 @@ export default ({ action }, { services, database }) => {
         message: "All resources created successfully",
         status: "success",
       });
+
+      // === SEND SUCCESS EMAIL ===
+      await sendStatusEmail("success");
     } catch (error) {
-      console.error("Unexpected error in hook:", error);
+      console.error("❌ Unexpected error in hook:", error);
       await errorService.createOne({
         tenantId,
         employeeId: personalId || null,
@@ -980,6 +1154,9 @@ export default ({ action }, { services, database }) => {
         pending_collections: pendingCollections,
         status: "failed",
       });
+
+      // === SEND FAILURE EMAIL ===
+      await sendStatusEmail("failed", "unknown", error.message);
     }
   });
 };
