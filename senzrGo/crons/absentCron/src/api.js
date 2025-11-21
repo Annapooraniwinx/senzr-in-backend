@@ -2,7 +2,7 @@ export default {
   id: "absentCron",
   handler: async (_options, { services, getSchema, database }) => {
     console.log(
-      "🚀🔥 Surthi HeinaJeson Starting automatic 123 attendance processing job..."
+      "🚀🔥HeinaJeson Starting automatic 123 attendance processing job..."
     );
 
     const { ItemsService } = services;
@@ -224,7 +224,7 @@ async function processAttendanceBatch(
     ]);
 
   // Create lookup maps
-  const holidayMap = createHolidayMap(holidays);
+  const holidayMap = createBranchHolidayMap(holidays);
   const shiftMap = createShiftMap(shifts);
   const employeeMap = createEmployeeMap(personalModules);
   const attendanceMap = createAttendanceMap(existingAttendance);
@@ -306,9 +306,35 @@ function processEmployeeDate(
 ) {
   const dateObj = new Date(date);
   const isWeekOff = checkWeekOff(employee, dateObj);
-  const isHoliday = holidayMap.has(date);
+  // === BRANCH-WISE HOLIDAY CHECK ===
+  let isHoliday = false;
+  let holidayEvent = null;
+
+  const employeeBranchId = employee.branchLocation?.id
+    ? Number(employee.branchLocation.id)
+    : null;
+
+  if (employeeBranchId && holidayMap.has(date)) {
+    const holidayData = holidayMap.get(date);
+    if (holidayData.branchIds.has(employeeBranchId)) {
+      isHoliday = true;
+      holidayEvent = holidayData.event;
+    }
+  }
+
+  if (!employeeBranchId) {
+    console.log("   Employee has no branch assigned → No holiday applies");
+  }
+
+  console.log("\nDAY TYPE ANALYSIS:");
+  console.log(`   Week Off: ${isWeekOff ? "YES" : "NO"}`);
+  console.log(`   Holiday: ${isHoliday ? `YES (${holidayEvent})` : "NO"}`);
+  if (isHoliday) {
+    console.log(`     Holiday Name: ${holidayEvent}`);
+    console.log(`     Employee Branch ID: ${employeeBranchId}`);
+  }
   const totalWorkingHours = parseFloat(
-    employee.config?.attendancePolicies?.TotalWorking_Hours || 8
+    employee.config?.attendancePolicies?.TotalWorking_Hours || 9
   );
 
   // 🎯 START OF EMPLOYEE PROCESSING
@@ -1501,6 +1527,7 @@ async function fetchPersonalModules(employeeIds, services, schema, database) {
       "attendanceSettings.isFriday",
       "attendanceSettings.isSaturday",
       "attendanceSettings.isSunday",
+      "branchLocation.id",
     ],
     limit: -1,
   });
@@ -1514,7 +1541,7 @@ async function fetchHolidays(tenantId, services, schema, database) {
   });
   return await holidayService.readByQuery({
     filter: { tenant: { tenantId: { _eq: tenantId } } },
-    fields: ["date"],
+    fields: ["date", "event", "AssignHolidays"],
     limit: -1,
   });
 }
@@ -1580,9 +1607,20 @@ async function fetchLogs(
 
 // ========== MAP CREATORS ==========
 
-function createHolidayMap(holidays) {
+function createBranchHolidayMap(holidays) {
   const map = new Map();
-  holidays.forEach((h) => map.set(h.date, true));
+
+  holidays.forEach((holiday) => {
+    const branchIds = holiday.AssignHolidays || [];
+    if (branchIds.length === 0) return;
+
+    map.set(holiday.date, {
+      event: holiday.event || "Holiday",
+      branchIds: new Set(branchIds.map((id) => Number(id))),
+    });
+  });
+
+  console.log(`Branch-wise holiday map created: ${map.size} dates`);
   return map;
 }
 
