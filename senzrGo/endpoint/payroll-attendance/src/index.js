@@ -178,13 +178,14 @@ module.exports = function registerEndpoint(router, { services }) {
         );
 
         const result = {};
+        const leaveDeductions = {};
         paginatedEmployeeIds.forEach((empId) => {
           const employeeLeaveBalance =
             personalModuleMap[empId]?.leaves?.leaveBalance || {};
           result[empId] = {
             employeeId: empId,
             ...structuredClone(ALL_TYPES),
-            leaveBalance: employeeLeaveBalance,
+            leaveDeducted: {},
           };
         });
 
@@ -283,19 +284,39 @@ module.exports = function registerEndpoint(router, { services }) {
 
                 empData.earlyLeavingData = { leave: leaveType };
 
+                let deductionAmount = 0; // ADD THIS
+
                 if (totalHours <= 2) {
                   empData.earlyLeaving += 0.25;
+                  deductionAmount = 0.25; // ADD THIS
                   empData.earlyLeavingData.mode = "Quarter Day";
                 } else if (totalHours <= 4) {
                   empData.earlyLeaving += 0.5;
+                  deductionAmount = 0.5; // ADD THIS
                   empData.earlyLeavingData.mode = "Half Day";
                 } else if (totalHours <= 6) {
                   empData.earlyLeaving += 0.75;
+                  deductionAmount = 0.75; // ADD THIS
                   empData.earlyLeavingData.mode = "0.75 Day";
                 } else {
                   empData.earlyLeaving += 1;
+                  deductionAmount = 1; // ADD THIS
                   empData.earlyLeavingData.mode = "Full Day";
                 }
+
+                // ADD THESE LINES:
+                // Track leave deduction for early leaving
+                if (!leaveDeductions[record.employeeId]) {
+                  leaveDeductions[record.employeeId] = {};
+                }
+                if (!leaveDeductions[record.employeeId][leaveType]) {
+                  leaveDeductions[record.employeeId][leaveType] = 0;
+                }
+                leaveDeductions[record.employeeId][leaveType] +=
+                  deductionAmount;
+                console.log(
+                  `📝 Early Leave Deduction - Employee: ${record.employeeId}, Type: ${leaveType}, Amount: ${deductionAmount}`
+                );
               } else if (earlyLeavingType === "fixed") {
                 empData.earlyLeaving += 1;
 
@@ -360,19 +381,39 @@ module.exports = function registerEndpoint(router, { services }) {
                     lateBy: record.lateBy,
                   };
 
+                  let deductionAmount = 0; // ADD THIS
+
                   if (totalHours <= 2) {
                     empData.lateComing += 0.25;
+                    deductionAmount = 0.25; // ADD THIS
                     empData.lateData.mode = "Quarter Day";
                   } else if (totalHours <= 4) {
                     empData.lateComing += 0.5;
+                    deductionAmount = 0.5; // ADD THIS
                     empData.lateData.mode = "Half Day";
                   } else if (totalHours <= 6) {
                     empData.lateComing += 0.75;
+                    deductionAmount = 0.75; // ADD THIS
                     empData.lateData.mode = "0.75 Day";
                   } else {
                     empData.lateComing += 1;
+                    deductionAmount = 1; // ADD THIS
                     empData.lateData.mode = "Full Day";
                   }
+
+                  // ADD THESE LINES:
+                  // Track leave deduction for late coming
+                  if (!leaveDeductions[record.employeeId]) {
+                    leaveDeductions[record.employeeId] = {};
+                  }
+                  if (!leaveDeductions[record.employeeId][leaveType]) {
+                    leaveDeductions[record.employeeId][leaveType] = 0;
+                  }
+                  leaveDeductions[record.employeeId][leaveType] +=
+                    deductionAmount;
+                  console.log(
+                    `📝 Late Coming Leave Deduction - Employee: ${record.employeeId}, Type: ${leaveType}, Amount: ${deductionAmount}`
+                  );
                 } else if (lateComingType === "fixed") {
                   empData.lateComing += 1;
                   empData.lateData = {
@@ -428,13 +469,25 @@ module.exports = function registerEndpoint(router, { services }) {
                 }
               } else if (workingHoursType === "leave") {
                 empData.workingHoursData = { mode: dayMode, leave: leaveType };
+                let deductionAmount = 0;
                 if (dayMode === "quarterDay") {
-                  empData.workingHours += 0.25;
+                  deductionAmount = 0.25;
                 } else if (dayMode === "halfDay") {
-                  empData.workingHours += 0.5;
+                  deductionAmount = 0.5;
                 } else {
-                  empData.workingHours += 1;
+                  deductionAmount = 1;
                 }
+                empData.workingHours += deductionAmount;
+
+                // Track leave deduction for later processing
+                if (!leaveDeductions[record.employeeId]) {
+                  leaveDeductions[record.employeeId] = {};
+                }
+                if (!leaveDeductions[record.employeeId][leaveType]) {
+                  leaveDeductions[record.employeeId][leaveType] = 0;
+                }
+                leaveDeductions[record.employeeId][leaveType] +=
+                  deductionAmount;
               } else {
                 empData.workingHoursData = {
                   mode: "fixed",
@@ -512,8 +565,176 @@ module.exports = function registerEndpoint(router, { services }) {
 
         const resultArray = Object.values(result);
 
+        console.log(
+          "\n🔍 ========== LEAVE DEDUCTION PROCESSING START =========="
+        );
+        console.log(
+          "📊 Total employees with leave deductions:",
+          Object.keys(leaveDeductions).length
+        );
+        console.log(
+          "📋 Leave deductions by employee:",
+          JSON.stringify(leaveDeductions, null, 2)
+        );
+
+        // Process leave deductions for all employees
+        if (Object.keys(leaveDeductions).length > 0) {
+          const leaveService = new ItemsService("leave", {
+            schema: req.schema,
+            accountability: req.accountability,
+          });
+
+          console.log(
+            "\n🔎 Fetching leave records for employees:",
+            Object.keys(leaveDeductions)
+          );
+
+          const leaveRecords = await leaveService.readByQuery({
+            filter: { assignedTo: { _in: Object.keys(leaveDeductions) } },
+            fields: ["id", "assignedTo", "leaveTaken", "leaveBalance"],
+            limit: -1,
+          });
+
+          console.log(`✅ Found ${leaveRecords.length} leave records`);
+          console.log(
+            "📄 Leave records:",
+            JSON.stringify(leaveRecords, null, 2)
+          );
+
+          const leaveUpdates = [];
+
+          leaveRecords.forEach((leaveRecord) => {
+            const empId = leaveRecord.assignedTo;
+            const empDeductions = leaveDeductions[empId];
+
+            console.log(`\n👤 Processing Employee: ${empId}`);
+            console.log("  Current Leave Balance:", leaveRecord.leaveBalance);
+            console.log("  Current Leave Taken:", leaveRecord.leaveTaken);
+            console.log("  Deductions to apply:", empDeductions);
+
+            if (!empDeductions) {
+              console.log("  ⚠️  No deductions found for this employee");
+              return;
+            }
+
+            let updatedTaken = { ...leaveRecord.leaveTaken };
+            let updatedBalance = { ...leaveRecord.leaveBalance };
+            let insufficientLeave = 0;
+
+            Object.entries(empDeductions).forEach(([leaveType, amount]) => {
+              // REMOVE THIS LINE:
+              // const balanceKey = `t${leaveType.toLowerCase().replace(/\s+/g, '')}`;
+
+              // ADD THESE LINES:
+              const balanceKey = leaveType.toLowerCase().replace(/\s+/g, ""); // for leaveBalance (no 't')
+              const takenKey = `t${balanceKey}`; // for leaveTaken (with 't')
+
+              const currentBalance = updatedBalance[balanceKey] || 0;
+
+              console.log(`\n  🔄 Processing leave type: ${leaveType}`);
+              console.log(`     Balance key: ${balanceKey}`);
+              console.log(`     Taken key: ${takenKey}`);
+              console.log(`     Current balance: ${currentBalance}`);
+              console.log(`     Amount to deduct: ${amount}`);
+
+              if (currentBalance >= amount) {
+                // Sufficient balance: deduct from balance, add to taken
+                updatedBalance[balanceKey] = currentBalance - amount;
+                updatedTaken[takenKey] = (updatedTaken[takenKey] || 0) + amount; // CHANGE takenKey here
+                console.log(`     ✅ Sufficient balance`);
+                console.log(`     New balance: ${updatedBalance[balanceKey]}`);
+                console.log(`     New taken: ${updatedTaken[takenKey]}`); // CHANGE takenKey here
+              } else {
+                // Insufficient balance: use what's available, track remainder
+                console.log(`     ⚠️  Insufficient balance!`);
+                if (currentBalance > 0) {
+                  updatedTaken[takenKey] =
+                    (updatedTaken[takenKey] || 0) + currentBalance; // CHANGE takenKey here
+                  updatedBalance[balanceKey] = 0;
+                  console.log(`     Used available balance: ${currentBalance}`);
+                }
+                const shortage = amount - currentBalance;
+                insufficientLeave += shortage;
+                console.log(`     Shortage: ${shortage}`);
+                console.log(
+                  `     Total insufficient leave so far: ${insufficientLeave}`
+                );
+              }
+            });
+
+            // Deduct insufficient leave from payable days
+            if (insufficientLeave > 0 && result[empId]) {
+              const previousPayableDays = result[empId].totalPayableDays;
+              result[empId].totalPayableDays -= insufficientLeave;
+              console.log(`\n  💰 Payable Days Adjustment:`);
+              console.log(`     Previous: ${previousPayableDays}`);
+              console.log(`     Deducted: ${insufficientLeave}`);
+              console.log(`     New: ${result[empId].totalPayableDays}`);
+            }
+
+            console.log("\n  📝 Final Updated Values:");
+            console.log("     Updated Balance:", updatedBalance);
+            console.log("     Updated Taken:", updatedTaken);
+
+            // ADD THESE LINES BEFORE leaveUpdates.push:
+            // Track what was actually deducted for this employee
+            const deductedSummary = {};
+            Object.entries(empDeductions).forEach(([leaveType, amount]) => {
+              const balanceKey = leaveType.toLowerCase().replace(/\s+/g, "");
+              const actualDeducted = Math.min(
+                amount,
+                leaveRecord.leaveBalance[balanceKey] || 0
+              );
+              if (actualDeducted > 0) {
+                deductedSummary[balanceKey] = actualDeducted;
+              }
+            });
+
+            // Update result with deducted summary
+            if (result[empId]) {
+              result[empId].leaveDeducted = deductedSummary;
+            }
+
+            console.log("     Leave Deducted Summary:", deductedSummary); // ADD THIS CONSOLE
+
+            leaveUpdates.push({
+              id: leaveRecord.id,
+              leaveTaken: updatedTaken,
+              leaveBalance: updatedBalance,
+            });
+          });
+
+          console.log(
+            "\n\n📤 Leave updates to be saved:",
+            JSON.stringify(leaveUpdates, null, 2)
+          );
+
+          // Bulk update all leave records
+          if (leaveUpdates.length > 0) {
+            console.log(
+              `\n💾 Updating ${leaveUpdates.length} leave records...`
+            );
+            await Promise.all(
+              leaveUpdates.map((update) =>
+                leaveService.updateOne(update.id, {
+                  leaveTaken: update.leaveTaken,
+                  leaveBalance: update.leaveBalance,
+                })
+              )
+            );
+            console.log("✅ All leave records updated successfully");
+          }
+        }
+
+        console.log(
+          "\n🏁 ========== LEAVE DEDUCTION PROCESSING END ==========\n"
+        );
+
+        // Update resultArray with latest payable days
+        const finalResultArray = Object.values(result);
+
         return res.json({
-          data: resultArray,
+          data: finalResultArray,
           meta: {
             total: totalEmployees,
             page: page,

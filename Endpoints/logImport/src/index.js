@@ -7,11 +7,42 @@ const upload = multer({ storage: multer.memoryStorage() });
 // 🔧 Helper Functions
 // ====================
 
-// Pretty section header
 const section = (label) =>
   console.log(
     `\n========== ${label.toUpperCase()} (${new Date().toLocaleString()}) ==========\n`
   );
+
+// 🔍 Detect sheet format
+function detectSheetFormat(data) {
+  section("DETECTING SHEET FORMAT");
+
+  // Check first few rows for format indicators
+  for (let i = 0; i < Math.min(10, data.length); i++) {
+    const row = data[i];
+
+    // Format 1: Original format with "Employee Code:-" in column B
+    if (row[1] === "Employee Code:-") {
+      console.log("📋 Detected: ORIGINAL FORMAT (Employee Code:- in column B)");
+      return "format1";
+    }
+
+    // Format 2: Simple table format with headers
+    if (
+      row.length >= 3 &&
+      String(row[0]).toLowerCase().includes("employee") &&
+      String(row[0]).toLowerCase().includes("code") &&
+      String(row[2]).toLowerCase().includes("logdate")
+    ) {
+      console.log(
+        "📋 Detected: SIMPLE TABLE FORMAT (Employee Code | Employee Name | LogDate)"
+      );
+      return "format2";
+    }
+  }
+
+  console.log("⚠️ Unknown format, defaulting to ORIGINAL FORMAT");
+  return "format1";
+}
 
 // 1️⃣ Parse Excel to JSON
 async function parseExcelFile(fileBuffer) {
@@ -27,16 +58,55 @@ async function parseExcelFile(fileBuffer) {
   return data;
 }
 
-// 2️⃣ Extract all employee codes
-function extractEmployeeCodes(data) {
-  section("STEP 2: EXTRACTING EMPLOYEE CODES");
+// 2️⃣ Extract employee codes - FORMAT 1 (Original)
+function extractEmployeeCodesFormat1(data) {
   const codes = [];
   for (let row of data) {
     if (row[1] === "Employee Code:-" && row[10]) {
       codes.push(row[10].toString().trim());
     }
   }
-  console.log(`👥 Found ${codes.length} employee blocks.`);
+  return codes;
+}
+
+// 2️⃣ Extract employee codes - FORMAT 2 (Simple Table)
+function extractEmployeeCodesFormat2(data) {
+  const codes = [];
+  let headerFound = false;
+
+  for (let row of data) {
+    // Skip until we find the header row
+    if (!headerFound) {
+      if (
+        row[0] &&
+        String(row[0]).toLowerCase().includes("employee") &&
+        String(row[0]).toLowerCase().includes("code")
+      ) {
+        headerFound = true;
+      }
+      continue;
+    }
+
+    // Extract employee code from first column
+    if (row[0] && row[0] !== "Employee Code") {
+      const code = row[0].toString().trim();
+      if (code) codes.push(code);
+    }
+  }
+
+  return codes;
+}
+
+// Master extraction function
+function extractEmployeeCodes(data, format) {
+  section("STEP 2: EXTRACTING EMPLOYEE CODES");
+
+  const codes =
+    format === "format1"
+      ? extractEmployeeCodesFormat1(data)
+      : extractEmployeeCodesFormat2(data);
+
+  console.log(`👥 Found ${codes.length} employee codes.`);
   return codes;
 }
 
@@ -71,9 +141,8 @@ async function validateEmployees(allCodes, tenantId, personalModuleService) {
   return { employeeMap, invalidUsers };
 }
 
-// 4️⃣ Parse logs for valid employees
-function extractLogs(data, validMap, tenantId) {
-  section("STEP 4: PARSING LOGS");
+// 4️⃣ Parse logs - FORMAT 1 (Original)
+function extractLogsFormat1(data, validMap, tenantId) {
   const monthMap = {
     Jan: "01",
     Feb: "02",
@@ -143,6 +212,180 @@ function extractLogs(data, validMap, tenantId) {
       logCount.set(currentEmployee, logCount.get(currentEmployee) + 1);
     }
   }
+
+  return { logs, logCount };
+}
+
+// 4️⃣ Parse logs - FORMAT 2 (Simple Table)
+function extractLogsFormat2(data, validMap, tenantId) {
+  const logs = [];
+  const logCount = new Map();
+  let headerFound = false;
+  let skippedRows = {
+    noEmployeeCode: 0,
+    noLogDate: 0,
+    invalidEmployee: 0,
+    invalidDateFormat: 0,
+    headerRow: 0,
+  };
+
+  // Track punch count per employee per date for alternating in/out
+  const punchTracker = new Map(); // Key: "empCode-date", Value: punch count
+
+  console.log(`🔍 Starting Format 2 log extraction...`);
+  console.log(`📋 Valid employee map has ${validMap.size} employees`);
+  console.log(`📋 Valid employees: ${Array.from(validMap.keys()).join(", ")}`);
+
+  for (let [rowIndex, row] of data.entries()) {
+    // Skip until header row
+    if (!headerFound) {
+      if (
+        row[0] &&
+        String(row[0]).toLowerCase().includes("employee") &&
+        String(row[0]).toLowerCase().includes("code")
+      ) {
+        headerFound = true;
+        skippedRows.headerRow++;
+        console.log(`✓ Header found at row ${rowIndex}: [${row.join(" | ")}]`);
+      }
+      continue;
+    }
+
+    // Debug: Log first few data rows
+    if (rowIndex < 5) {
+      console.log(`🔎 Row ${rowIndex}: [${row.join(" | ")}]`);
+    }
+
+    // Parse data rows
+    const empCode = row[0]?.toString().trim();
+    const logDateTimeStr = row[2]?.toString().trim();
+
+    // Check for missing data
+    if (!empCode) {
+      skippedRows.noEmployeeCode++;
+      if (rowIndex < 5) console.log(`❌ Row ${rowIndex}: No employee code`);
+      continue;
+    }
+
+    if (!logDateTimeStr) {
+      skippedRows.noLogDate++;
+      if (rowIndex < 5)
+        console.log(`❌ Row ${rowIndex}: No log date for ${empCode}`);
+      continue;
+    }
+
+    if (!validMap.has(empCode)) {
+      skippedRows.invalidEmployee++;
+      if (rowIndex < 5)
+        console.log(`❌ Row ${rowIndex}: Invalid employee ${empCode}`);
+      continue;
+    }
+
+    // Parse datetime: Handle multiple formats
+    // Format 1: "2025-09-12 09:00:00"
+    // Format 2: Excel serial date number
+    let dateTimeMatch = null;
+    let date = null;
+    let timeStamp = null;
+
+    // Try standard format first
+    dateTimeMatch = logDateTimeStr.match(
+      /(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/
+    );
+
+    if (dateTimeMatch) {
+      const [, year, month, day, hour, minute, second] = dateTimeMatch;
+      date = `${year}-${month}-${day}`;
+      timeStamp = `${hour}:${minute}`;
+    } else {
+      // Try Excel serial date number
+      const serialNumber = parseFloat(logDateTimeStr);
+      if (!isNaN(serialNumber)) {
+        // Excel date serial number (days since 1900-01-01)
+        const excelEpoch = new Date(1900, 0, 1);
+        const jsDate = new Date(
+          excelEpoch.getTime() + (serialNumber - 2) * 86400000
+        );
+
+        const year = jsDate.getFullYear();
+        const month = String(jsDate.getMonth() + 1).padStart(2, "0");
+        const day = String(jsDate.getDate()).padStart(2, "0");
+        const hour = String(jsDate.getHours()).padStart(2, "0");
+        const minute = String(jsDate.getMinutes()).padStart(2, "0");
+
+        date = `${year}-${month}-${day}`;
+        timeStamp = `${hour}:${minute}`;
+      }
+    }
+
+    if (!date || !timeStamp) {
+      skippedRows.invalidDateFormat++;
+      if (rowIndex < 5)
+        console.log(
+          `❌ Row ${rowIndex}: Invalid date format: ${logDateTimeStr}`
+        );
+      continue;
+    }
+
+    const employeeId = validMap.get(empCode);
+
+    // 🔄 Alternating in/out logic based on chronological order per employee per date
+    const trackerKey = `${empCode}-${date}`;
+    const punchCount = punchTracker.get(trackerKey) || 0;
+
+    // 1st punch = in, 2nd = out, 3rd = in, 4th = out, ...
+    const action = punchCount % 2 === 0 ? "in" : "out";
+
+    // Increment punch count for this employee-date combination
+    punchTracker.set(trackerKey, punchCount + 1);
+
+    logs.push({
+      tenant: tenantId,
+      date,
+      timeStamp,
+      action,
+      employeeId,
+      rowIndex,
+    });
+
+    logCount.set(empCode, (logCount.get(empCode) || 0) + 1);
+
+    if (logs.length <= 5) {
+      console.log(
+        `✅ Log ${
+          logs.length
+        }: ${empCode} → ${date} ${timeStamp} (${action}) [Punch #${
+          punchCount + 1
+        }]`
+      );
+    }
+  }
+
+  console.log(`\n📊 Format 2 Parsing Summary:`);
+  console.log(`   ✅ Successfully parsed: ${logs.length} logs`);
+  console.log(`   ❌ Skipped - Header rows: ${skippedRows.headerRow}`);
+  console.log(
+    `   ❌ Skipped - No employee code: ${skippedRows.noEmployeeCode}`
+  );
+  console.log(`   ❌ Skipped - No log date: ${skippedRows.noLogDate}`);
+  console.log(
+    `   ❌ Skipped - Invalid employee: ${skippedRows.invalidEmployee}`
+  );
+  console.log(
+    `   ❌ Skipped - Invalid date format: ${skippedRows.invalidDateFormat}`
+  );
+
+  return { logs, logCount };
+}
+
+// Master logs extraction
+function extractLogs(data, validMap, tenantId, format) {
+  section("STEP 4: PARSING LOGS");
+
+  const { logs, logCount } =
+    format === "format1"
+      ? extractLogsFormat1(data, validMap, tenantId)
+      : extractLogsFormat2(data, validMap, tenantId);
 
   console.log(`🧾 Total logs parsed: ${logs.length}`);
   return { logs, logCount };
@@ -229,6 +472,7 @@ export default function registerEndpoint(router, { services, database }) {
     const start = Date.now();
 
     const results = {
+      sheetFormat: "",
       totalEmployees: 0,
       totalLogs: 0,
       totalBatches: 0,
@@ -249,9 +493,15 @@ export default function registerEndpoint(router, { services, database }) {
       console.log(`🪪 Import ID: ${importID}`);
       console.log(`📄 File ID: ${fileId}`);
 
-      // Step 1–5 — Process
+      // Step 1 — Parse Excel
       const data = await parseExcelFile(file.buffer);
-      const employeeCodes = extractEmployeeCodes(data);
+
+      // 🆕 Detect format
+      const format = detectSheetFormat(data);
+      results.sheetFormat = format;
+
+      // Step 2-5 — Process with format-aware functions
+      const employeeCodes = extractEmployeeCodes(data, format);
 
       const personalModuleService = new ItemsService("personalModule", {
         schema: req.schema,
@@ -275,7 +525,12 @@ export default function registerEndpoint(router, { services, database }) {
         personalModuleService
       );
 
-      const { logs, logCount } = extractLogs(data, employeeMap, tenantId);
+      const { logs, logCount } = extractLogs(
+        data,
+        employeeMap,
+        tenantId,
+        format
+      );
 
       const totalBatches = await insertLogsInBatches(
         logs,
@@ -284,6 +539,7 @@ export default function registerEndpoint(router, { services, database }) {
         importID,
         fileId
       );
+
       if (totalBatches === Math.ceil(logs.length / 100)) {
         await importService.updateOne(importID, {
           status: "generated",
@@ -291,6 +547,7 @@ export default function registerEndpoint(router, { services, database }) {
         });
         console.log(`🎉 Import completed: status set to GENERATED`);
       }
+
       // Final Summary
       results.totalEmployees = employeeMap.size;
       results.totalLogs = logs.length;
