@@ -224,7 +224,20 @@ async function processAttendanceBatch(
     ]);
 
   // Create lookup maps
-  const holidayMap = createBranchHolidayMap(holidays);
+  const holidayMap = new Map();
+
+  personalModules.forEach((employee) => {
+    const assignedHolidayIds = employee.branchLocation?.holidays || [];
+    assignedHolidayIds.forEach((holidayId) => {
+      const holiday = holidays.find((h) => h.id === Number(holidayId));
+      if (holiday) {
+        holidayMap.set(holiday.date, {
+          event: holiday.event || "Holiday",
+          branchIds: new Set([employee.branchLocation.id]),
+        });
+      }
+    });
+  });
   const shiftMap = createShiftMap(shifts);
   const employeeMap = createEmployeeMap(personalModules);
   const attendanceMap = createAttendanceMap(existingAttendance);
@@ -1131,7 +1144,7 @@ function createBaseAttendanceRecord(
     attendance = "holiday";
     attendanceContext = "Holiday";
   } else if (isWeekOff) {
-    attendance = "weekoff";
+    attendance = "weekOff";
     attendanceContext = "WeeklyOff";
   } else {
     attendance = "absent";
@@ -1528,6 +1541,7 @@ async function fetchPersonalModules(employeeIds, services, schema, database) {
       "attendanceSettings.isSaturday",
       "attendanceSettings.isSunday",
       "branchLocation.id",
+      "branchLocation.holidays",
     ],
     limit: -1,
   });

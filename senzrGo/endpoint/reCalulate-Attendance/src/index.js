@@ -2,7 +2,7 @@ export default (router, { services }) => {
   router.post("/re-attendance", async (req, res) => {
     const startTime = Date.now();
     console.log(
-      "🚀 surthi HeinaJeson Starting attendance processing for",
+      "🚀HeinaJeson Starting attendance processing for",
       req.body.employeeIds.length,
       "employees"
     );
@@ -100,7 +100,20 @@ async function processBatch(
     ),
   ]);
   // Step 3: Create lookup maps for faster access
-  const holidayMap = createBranchHolidayMap(holidays);
+  const holidayMap = new Map();
+
+  personalModules.forEach((employee) => {
+    const branchHolidays = employee.branchLocation?.holidays || [];
+    branchHolidays.forEach((holidayId) => {
+      const holiday = holidays.find((h) => h.id === Number(holidayId));
+      if (holiday) {
+        holidayMap.set(holiday.date, {
+          event: holiday.event,
+          branchIds: new Set([employee.branchLocation.id]),
+        });
+      }
+    });
+  });
   const shiftMap = createShiftMap(shifts);
   const logsMap = createLogsMap(logs);
   // Step 4: Generate date range
@@ -134,7 +147,7 @@ async function processBatch(
             date_created: new Date().toISOString(),
             requestedDay: "fullDay",
             attendance_status: record.logAttendanceStatus,
-            mode: "manual",
+            mode: "reCalculate",
             leaveType: "none",
             ValidLogs: "authorized",
             employeeId: employee.id,
@@ -265,6 +278,7 @@ async function fetchPersonalModules(
       "attendanceSettings.isSaturday",
       "attendanceSettings.isSunday",
       "branchLocation.id",
+      "branchLocation.holidays",
     ],
     limit: -1,
   });
@@ -276,7 +290,7 @@ async function fetchHolidays(tenantId, services, schema, accountability) {
     schema,
     accountability,
   });
-  console.log("Fetching branch-wise holidays for tenant", tenantId);
+  console.log("⏰ Fetching branch-wise holidays for tenant", tenantId);
   return await holidayService.readByQuery({
     filter: {
       tenant: {
@@ -458,6 +472,8 @@ function calculateAttendanceForDate(
   );
   console.log(` ${isWeekOff ? "WEEK OFF: YES" : "WEEK OFF: NO"}`);
   console.log(` ${isHoliday ? "HOLIDAY: YES" : "HOLIDAY: NO"}`);
+  console.log(` 🎉Employee Branch ID: ${employeeBranchId}`);
+  console.log(` 🏖️Holiday Name: ${holidayEvent || "N/A"}`);
   if (isHoliday) {
     console.log(` Holiday Name: ${holidayEvent || "N/A"}`);
     console.log(` Employee Branch ID: ${employeeBranchId}`);
@@ -527,7 +543,7 @@ function calculateAttendanceForDate(
       lateBy: "00:00:00",
       attendance,
       attendanceContext,
-      mode: "manual",
+      mode: "reCalculate",
       action: "notPunchedIn",
       status: "notPunchedIn",
       inTime: "00:00:00",

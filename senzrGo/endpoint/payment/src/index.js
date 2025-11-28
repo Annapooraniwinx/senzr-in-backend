@@ -3,8 +3,8 @@ import crypto from "crypto";
 
 // Initialize Razorpay instance
 const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID, // Add to your .env file
-  key_secret: process.env.RAZORPAY_KEY_SECRET, // Add to your .env file
+  key_id: "rzp_test_RkntHiyJm4WaMb",
+  key_secret: "rJnYblhES5gguEBHxESk8KpA",
 });
 
 export default (router, { services, exceptions }) => {

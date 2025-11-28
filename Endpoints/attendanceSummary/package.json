@@ -26,5 +26,9 @@
 	},
 	"devDependencies": {
 		"@directus/extensions-sdk": "13.1.0"
+	},
+	"dependencies": {
+		"crypto": "^1.0.1",
+		"razorpay": "^2.9.6"
 	}
 }
