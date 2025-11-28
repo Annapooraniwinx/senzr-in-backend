@@ -106,6 +106,7 @@ async function fetchPersonalModuleData(ItemsService, req, employeeIds) {
       "config.attendancePolicies.weekOffType",
       "config.attendancePolicies.publicHolidayType",
       "config.attendancePolicies.extraHoursType",
+      "config.attendancePolicies.TotalWorking_Hours",
       "config.attendanceSettings",
       "assignedUser.pfTracking",
       "assignedUser.esiTracking",
@@ -1259,7 +1260,7 @@ async function processEmployeeData(
   const totalAttendanceCount = payrollData?.totalAttendanceCount || {};
   const perDaySalary =
     (salaryBreakdown?.totalEarnings || 0) / Number(totalDays);
-  const perHourSalary = perDaySalary / 9;
+  const perHourSalary = perDaySalary / attendancePolicy?.TotalWorking_Hours;
 
   const lateEntryPenalty = calculateLateEntryPenalty(
     attendancePolicy,
