@@ -1,0 +1,336 @@
+case 1) 
+
+for this date in logs  if the timestamp field data is only in logs like 2 data with timestams or more may be .. with attendance_status data is emty or null then do the normal process okeyy thst exist in my code chec days based on attendance calcalet everything put entr in attendance okey thst it no cahge snedde in this caesae its alrday exist okeyy 
+
+case 2)
+
+for this date in logs  if the timestamp field data  has data not 00:00:00 or emty  if it single data is there lik one dat afoe thst date  means then that data has timestamp with attendance_status data is emty or nullthat is  pu absent  as attendanec its attendanecontex for this caese okeyy 
+
+    "attendance": "absent",
+    "day": 0.0",
+    "attendanceContext": "Absent",
+
+case 3)
+
+for this date in logs  if the timestamp is has data not 00:00:00 field data is there for multiple entries attendance_status data is not emty or null it has data like this measn attendance_status ==="workFromHomeApproved"
+||"onDutyApproved" and field requested_By is fullDay means then
+ means sent calcualte everything as old logic bcz time stamp is exitt but the attendance and attendance contect is have to be like this 
+ 
+ if workFromHomeApproved
+ 
+ "attendance": "workFromHome",
+ "day": "1.0",
+ "attendanceContext": "WeeklyOff Present",
+ 
+  or
+  
+ if onDutyApproved 
+
+ "attendance": "onDuty",
+ "day": "1.0",
+ "attendanceContext": "On OD",
+ 
+ 
+ either one  data based on which one is exist okryy 
+ 
+case 4)
+
+for this date in logs  if the timestamp field has data not 00:00:00  or emty is there for multiple entries attendance_status data is not emty or null it has data like this measn attendance_status ==="workFromHomeApproved"&&"onDutyApproved" and field requested_By is fullDay means then  both is presnt means the this time
+ means sent calcualte everything as old logic bcz time stamp is exitt but the attendance and attendance contect is have to be like this 
+ 
+ this time  check which is approved first is if workFromHomeApproved is latest one the this is the attendance 
+ 
+ "attendance": "workFromHome",
+ "day": "1.0",
+ "attendanceContext": "WeeklyOff Present",
+
+else this time onDutyApproved  is  latest dat amesn then the attendanec is this  
+
+ "attendance": "onDuty",
+ "day": "1.0",
+ "attendanceContext": "On OD",
+ 
+either one u have chosoen latest will wins alwayes based on date_created okeyy  
+
+
+
+case 5)
+
+for this date in logs  if the timestamp field  is emty or 00:00:00 then check is attendance_status data is not emty or null it has data like this measn attendance_status ===present || absent || holiday || weekOff || weekoffPresent || holidayPresent || paidLeave || unPaidLeave || onDuty || workFromHome || unPaidLeaveApproved || paidLeaveApproved  and field requested_By is fullDay means then
+ means sent calcualte everything as old logic bcz time stamp is exitt but the attendance and attendance contect is have to be like this 
+ 
+  
+if unPaidLeaveApproved its 
+ 
+   "attendance": "unPaidLeave",
+   "day": 0:0",
+   "attendanceContext": "UnPaidLeave",
+   
+      or
+   
+if paidLeaveApproved
+ 
+   "attendance": "paidLeave",
+   "day": 1.0",
+   "attendanceContext": "On Leave",
+   
+ like thsi foe all othr caese too data 
+    {
+    "attendance": "present",
+    "day": "1.0",
+    "attendanceContext": "Present"
+  },
+ {
+    "attendance": "absent",
+    "day": "0.0",
+    "attendanceContext": "Absent"
+  },
+   {
+    "attendance": "holiday",
+    "day": "0.0",
+    "attendanceContext": "Holiday"
+  },
+  {
+    "attendance": "weekOff",
+    "day": "1.0",
+    "attendanceContext": "WeeklyOff"
+  },
+  {
+    "attendance": "weekoffPresent",
+    "day": "1.0",
+    "attendanceContext": "WeeklyOff Present"
+  },
+  {
+    "attendance": "holidayPresent",
+    "day": "1.0",
+    "attendanceContext": "Holiday Present"
+  },
+   {
+    "attendance": "onDuty",
+    "day": "1.0",
+    "attendanceContext": "On OD"
+  },
+  {
+    "attendance": "workFromHome",
+    "day": "1.0",
+    "attendanceContext": "Work From Home"
+  },
+  {
+    "attendance": "paidLeave",
+    "day": "1.0",
+    "attendanceContext": "On Leave"
+  },
+   {
+    "attendance": "unPaidLeave",
+    "day": "0.0",
+    "attendanceContext": "UnPaidLeave"
+  }
+}
+
+ either one  data based on which one is exist okryy  
+ 
+ in this baoev caese 5 if its more than one is there prsent is alos there absent liek this or even more u can sider like this not all 2 or more  present && absent && holiday && weekOff && weekoffPresent && holidayPresent && paidLeave && unPaidLeave && onDuty && workFromHome && unPaidLeaveApproved && paidLeaveApproved  or all anything consider which is latest one thst win if holidayPresent is latest one then that it that date attendance okeyy 
+ 
+case 6) 
+in this cease if tht logs has latest data has time stamp but some logs data has no time stamp the priory is latest one right if that latest has  time stamp but u will calcaule all attendanec normlay but when i cme to decisde the attendanec and ita ttendanec contex and day u have to check is this tim woeking hours is more thsn half TotalWorking_Hours (9 means then half is 4.5 i think ) if he woekde lester thannthis means then check if he has any   "unPaidLeaveApproved"|| "paidLeaveApproved"||"workFromHomeApproved"||"onDutyApproved" is exits if nay one is exist measn check is requested_By is halfDay or full if its fullDay if ist fullDay hen the data will be liek this 
+
+ if workFromHomeApproved
+ 
+ "attendance": "workFromHome",
+ "day": "1.0",
+ "attendanceContext": "WeeklyOff Present",
+ 
+  or
+  
+ if onDutyApproved 
+
+ "attendance": "onDuty",
+ "day": "1.0",
+ "attendanceContext": "On OD",
+ 
+ 
+ if requested_By is halfDay means then that tim e
+ 
+ ##(paidLeaveApproved halfDay Case) :
+
+1) if day is not weekOff or holiday  then in logs collection attendance_status ===  "paidLeaveApproved" and requested_By  is halfDay ----  then in attendance inTime and Out Time  no need to sent thst in payload
+Attendance payloads
+{
+            "date": "2025-11-10",
+            "attendance": "present",
+            "day": 1.0",
+            "attendanceContext": "1/2Present 1/2On Leave",
+            "employeeId": 10466,
+            "mode": "manual",
+            "leaveType": "sickLeave", //leaveType filed Data in log have to pass
+            "uniqueId": "2025-11-10-10028-c06d5756-422f-42c7-a581-5b225c39b145",
+}
+ 
+2) if day is not weekOff but holiday then in logs collection attendance_status ===  "paidLeaveApproved" and requested_By  is halfDay ----  then in attendance inTime and Out Time  no need to sent thst in payload
+{ 
+            "date": "2025-11-10",
+            "attendance": "holidayPresent",
+            "day": 1.0",
+            "attendanceContext": "1/2HolidayPresent 1/2On Leave",
+            "employeeId": 10466,
+            "mode": "manual",
+            "leaveType": "sickLeave", //leaveType filed Data in log have to pass
+            "uniqueId": "2025-11-10-10028-c06d5756-422f-42c7-a581-5b225c39b145",
+}
+
+3) if day is weekOff  but not holiday then in logs collection attendance_status ===  "paidLeaveApproved" and requested_By  is halfDay ----  then in attendance inTime and Out Time  no need to sent thst in payload
+{
+            "date": "2025-11-10",
+            "attendance": "weekoffPresent",
+            "day": 1.0",
+            "attendanceContext": "1/2WeeklyOff Present 1/2On Leave",
+            "employeeId": 10466,
+            "mode": "manual",
+            "leaveType": "sickLeave", //leaveType filed Data in log have to pass
+            "uniqueId": "2025-11-10-10028-c06d5756-422f-42c7-a581-5b225c39b145",
+}
+
+##(unPaidLeaveApproved HalfDay Case) :
+
+1) if day is not weekOff or holiday  then in logs collection attendance_status ===  "unPaidLeaveApproved" and requested_By  is halfDay ----  then in attendance inTime and Out Time  no need to sent thst in payload
+{
+            "date": "2025-11-10",
+            "attendance": "present",
+            "day": 0.5",
+            "attendanceContext": "1/2Present 1/2UnPaidLeave",
+            "employeeId": 10466,
+            "mode": "manual",
+            "leaveType": "none",
+            "uniqueId": "2025-11-10-10028-c06d5756-422f-42c7-a581-5b225c39b145",
+}
+ 
+2) if day is not weekOff but holiday then in logs collection attendance_status ===  "unPaidLeaveApproved" and requested_By  is halfDay ----  then in attendance inTime and Out Time  no need to sent thst in payload
+{ 
+            "date": "2025-11-10",
+            "attendance": "holidayPresent",
+            "day": 0.5",
+            "attendanceContext": "1/2HolidayPresent 1/2UnPaidLeave",
+            "employeeId": 10466,
+            "mode": "manual",
+            "leaveType": "none",
+            "uniqueId": "2025-11-10-10028-c06d5756-422f-42c7-a581-5b225c39b145",
+}
+
+3) if day is weekOff  but not holiday then in logs collection attendance_status ===  "unPaidLeaveApproved" and requested_By  is halfDay ----  then in attendance inTime and Out Time  no need to sent thst in payload
+{
+            "date": "2025-11-10",
+            "attendance": "weekoffPresent",
+            "day": 0.5",
+            "attendanceContext": "1/2WeeklyOff Present 1/2UnPaidLeave",
+            "employeeId": 10466,
+            "mode": "manual",
+            "leaveType": "none",
+            "uniqueId": "2025-11-10-10028-c06d5756-422f-42c7-a581-5b225c39b145",
+}
+ in hald caese there i snoo ||"workFromHomeApproved"||"onDutyApproved"  its full day caese onlyy okeyy  
+
+ 
+ this is for expample one data of logs  {
+  "data": [
+    {
+      "tenant": "c06d5756-422f-42c7-a581-5b225c39b145",
+      "timeStamp": null,
+      "date": "2025-08-30",
+      "date_created": "2025-08-30T06:56:22.240Z",
+      "status": "draft",
+      "requestedDay": "fullDay",
+      "attendance_status": "paidLeaveApproved",
+      "mode": "manual",
+      "id": 453927,
+      "employeeId": {
+        "assignedUser": {
+          "first_name": "yogesh"
+        }
+      },
+      "employeeId": 9821
+    },
+    {
+      "tenant": "c06d5756-422f-42c7-a581-5b225c39b145",
+      "timeStamp": null,
+      "date": "2025-08-30",
+      "date_created": "2025-08-30T08:09:09.797Z",
+      "status": "draft",
+      "requestedDay": "fullDay",
+      "attendance_status": "unPaidLeaveApproved",
+      "mode": "manual",
+      "id": 436163,
+      "employeeId": {
+        "assignedUser": {
+          "first_name": "yogesh"
+        }
+      },
+      "employeeId": 9821
+    },
+    {
+      "tenant": "c06d5756-422f-42c7-a581-5b225c39b145",
+      "timeStamp": "18:56:48",
+      "date": "2025-08-30",
+      "date_created": "2025-08-30T13:27:01.002Z",
+      "status": "draft",
+      "requestedDay": null,
+      "attendance_status": null,
+      "mode": "throughApp",
+      "id": 274069,
+      "1d1f2976": {
+        "assignedUser": {
+          "first_name": "yogesh"
+        }
+      },
+      "employeeId": 9821
+    },
+    {
+      "tenant": "c06d5756-422f-42c7-a581-5b225c39b145",
+      "timeStamp": "18:57:57",
+      "date": "2025-08-30",
+      "date_created": "2025-08-30T13:28:05.544Z",
+      "status": "draft",
+      "requestedDay": null,
+      "attendance_status": null,
+      "mode": "throughApp",
+      "id": 274071,
+      "employeeId": {
+        "assignedUser": {
+          "first_name": "yogesh"
+        }
+      },
+      "employeeId": 9821
+    }
+  ]
+}
+ this  sample out put   CASE 6 LOGIC (YOUR RULE)
+"if latest data has time stamp ... but worked less than half of TotalWorking_Hours (4.5 hrs) then check if any full-day approved leave exists → apply it"
+YOUR PUNCH DATA:
+
+IN: 18:56:48
+OUT: 18:57:57
+→ Worked = 1 minute only (way less than 4.5 hrs)
+
+OLDER FULL-DAY APPROVED LEAVES EXIST:
+
+paidLeaveApproved (fullDay)
+unPaidLeaveApproved (fullDay) → LATEST AMONG LEAVES
+
+FINAL DECISION (As Per Your Rule)
+LATEST APPROVED FULL-DAY LEAVE WINS because punch working time < 4.5 hrs
+The latest approved leave is:
+unPaidLeaveApproved (date_created: 08:09 → newer than paid leave at 06:56)
+FINAL ATTENDANCE FOR 2025-08-30
+JSON{
+  "date": "2025-08-30",
+  "employeeId": 9821,
+  "attendance": "unPaidLeave",
+  "attendanceContext": "UnPaidLeave",
+  "day": 0.0,
+  "inTime": "00:00:00",
+  "outTime": "00:00:00",
+  "leaveType": null,
+  "mode": "manual",
+  "uniqueId": "2025-08-30-9821-c06d5756-422f-42c7-a581-5b225c39b145"
+}
+ 
+

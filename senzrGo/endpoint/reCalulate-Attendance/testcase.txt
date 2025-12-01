@@ -1,0 +1,1187 @@
+Attendance System - Complete Test Cases for QA Testing
+Test Environment Setup
+TotalWorking_Hours: 9 (hours)]
+Half Working Hours: 4.5 hours (270 minutes)
+Default Shift: 09:00:00 to 18:00:00
+Tenant ID: c06d5756-422f-42c7-a581-5b225c39b145
+Employee ID: 10466
+
+TEST CATEGORY 1: NO LOGS CASES
+✅ TEST CASE 1.1: Regular Day with No Logs
+Test ID: TC-NO-LOGS-001
+ Description: Employee has no logs on a regular working day
+ Pre-conditions:
+Date is NOT a holiday
+Date is NOT a week off
+No logs exist in database for this date
+Test Data:Date: 2025-11-21 (Thursday)
+Logs: [] (empty)
+isHoliday: false
+isWeekOff: false
+
+Expected Result:
+Attendance Record:
+{
+  "attendance": "absent",
+  "attendanceContext": "Absent",
+  "day": 0.0,
+  "inTime": "00:00:00",
+  "outTime": "00:00:00",
+  "workHours": "00:00:00",
+  "mode": "manual"
+}
+
+Logs Record Created:
+{
+  "attendance_status": "absent",
+  "requestedDay": "fullDay",
+  "timeStamp": null,
+  "mode": "manual",
+  "leaveType": "none"
+}
+
+Console Output to Verify:
+🚨 CASE: NO LOGS FOUND - CREATING AUTOMATIC ENTRIES
+📍 SUB-CASE 1: REGULAR DAY + NO LOGS → ABSENT
+   ❌ Attendance: absent
+   📊 Day Value: 0.0
+   📝 Creating log entry with status: absent
+
+
+✅ TEST CASE 1.2: Holiday with No Logs
+Test ID: TC-NO-LOGS-002
+ Description: Employee has no logs on a company holiday
+ Pre-conditions:
+Date IS a holiday (exists in holiday table)
+Date is NOT a week off
+No logs exist
+Test Data:
+Date: 2025-11-20 (Diwali)
+Logs: [] (empty)
+isHoliday: true
+isWeekOff: false
+
+Expected Result:
+Attendance:
+{
+  "attendance": "holiday",
+  "attendanceContext": "Holiday",
+  "day": 0.0,
+  "inTime": "00:00:00",
+  "outTime": "00:00:00"
+}
+
+Logs Created:
+{
+  "attendance_status": "holiday",
+  "requestedDay": "fullDay"
+}
+
+Console Output:
+🚨 CASE: NO LOGS FOUND
+📍 SUB-CASE 2: HOLIDAY + NO LOGS → HOLIDAY
+   🎉 Attendance: holiday
+   📊 Day Value: 0.0
+
+
+✅ TEST CASE 1.3: Week Off with No Logs
+Test ID: TC-NO-LOGS-003
+ Description: Employee has no logs on a week off day
+ Pre-conditions:
+Date is NOT a holiday
+Date IS a week off (Sunday/Saturday as per settings)
+No logs exist
+Test Data:
+Date: 2025-11-23 (Sunday - Week Off)
+Logs: [] (empty)
+isHoliday: false
+isWeekOff: true
+
+Expected Result:
+Attendance:
+{
+  "attendance": "weekOff",
+  "attendanceContext": "WeeklyOff",
+  "day": 1.0,
+  "inTime": "00:00:00",
+  "outTime": "00:00:00"
+}
+
+Logs Created:
+{
+  "attendance_status": "weekOff",
+  "requestedDay": "fullDay"
+}
+
+Console Output:
+📍 SUB-CASE 3: WEEK OFF + NO LOGS → WEEK OFF
+   🏖️  Attendance: weekOff
+   📊 Day Value: 1.0
+
+
+TEST CATEGORY 2: NORMAL ATTENDANCE (CASE 1)
+✅ TEST CASE 2.1: Perfect Attendance
+Test ID: TC-NORMAL-001
+ Description: Employee punched in/out exactly on time
+ Pre-conditions: Has timestamp logs, no status logs
+Test Data:
+Date: 2025-11-21
+Shift: 09:00:00 to 18:00:00
+Logs:
+[
+  {
+    "timeStamp": "09:00:00",
+    "attendance_status": null,
+    "mode": "throughApp"
+  },
+  {
+    "timeStamp": "18:00:00",
+    "attendance_status": null,
+    "mode": "throughApp"
+  }
+]
+isHoliday: false
+isWeekOff: false
+
+Expected Result:
+{
+  "attendance": "present",
+  "attendanceContext": "Present",
+  "day": 1.0,
+  "inTime": "09:00:00",
+  "outTime": "18:00:00",
+  "workHours": "09:00:00",
+  "lateBy": "00:00:00",
+  "earlyDeparture": "00:00:00",
+  "overTime": "00:00:00"
+}
+
+Console Output:
+📌 CASE 1: NORMAL ATTENDANCE (TIMESTAMP ONLY)
+   ⏱️  TIME CALCULATIONS:
+      First IN: 09:00:00
+      Last OUT: 18:00:00
+      Work Hours: 09:00:00
+      Late By: 00:00:00
+      Early Departure: 00:00:00
+      Overtime: 00:00:00
+
+Pass Criteria: ✓ attendance = "present" ✓ day = 1.0 ✓ workHours = "09:00:00" ✓ All penalties = "00:00:00"
+
+✅ TEST CASE 2.2: Late Coming
+Test ID: TC-NORMAL-002
+ Description: Employee came late by 30 minutes
+Test Data:
+Logs:
+[
+  { "timeStamp": "09:30:00" },
+  { "timeStamp": "18:00:00" }
+]
+Shift: 09:00:00 to 18:00:00
+
+Expected Result:
+{
+  "attendance": "present",
+  "day": 1.0,
+  "inTime": "09:30:00",
+  "outTime": "18:00:00",
+  "workHours": "08:30:00",
+  "lateBy": "00:30:00",
+  "earlyDeparture": "00:00:00",
+  "overTime": "00:00:00"
+}
+
+Console Output:
+⏱️  TIME CALCULATIONS:
+   Late By: 00:30:00 (30 mins)
+   Work Hours: 08:30:00 (510 mins)
+
+Pass Criteria: ✓ lateBy = "00:30:00" ✓ workHours = "08:30:00" (9:00 - 0:30)
+
+✅ TEST CASE 2.3: Early Departure
+Test ID: TC-NORMAL-003
+ Description: Employee left 1 hour early
+Test Data:
+Logs:
+[
+  { "timeStamp": "09:00:00" },
+  { "timeStamp": "17:00:00" }
+]
+
+Expected Result:
+{
+  "attendance": "present",
+  "day": 1.0,
+  "workHours": "08:00:00",
+  "earlyDeparture": "01:00:00",
+  "overTime": "00:00:00"
+}
+
+Console Output:
+⏱️  TIME CALCULATIONS:
+   Early Departure: 01:00:00 (60 mins)
+
+Pass Criteria: ✓ earlyDeparture = "01:00:00" ✓ workHours = "08:00:00"
+
+✅ TEST CASE 2.4: Overtime
+Test ID: TC-NORMAL-004
+ Description: Employee worked 2 hours overtime
+Test Data:
+Logs:
+[
+  { "timeStamp": "09:00:00" },
+  { "timeStamp": "20:00:00" }
+]
+TotalWorking_Hours: 9
+
+Expected Result:
+{
+  "attendance": "present",
+  "day": 1.0,
+  "workHours": "11:00:00",
+  "overTime": "02:00:00",
+  "lateBy": "00:00:00",
+  "earlyDeparture": "00:00:00"
+}
+
+Calculation:
+Work Hours: 11:00:00 (660 mins)
+Required: 09:00:00 (540 mins)
+Overtime: 660 - 540 = 120 mins = 02:00:00
+
+Pass Criteria: ✓ overTime = "02:00:00" ✓ workHours = "11:00:00"
+
+✅ TEST CASE 2.5: Late + Early Departure
+Test ID: TC-NORMAL-005
+ Description: Employee came late and left early
+Test Data:
+Logs:
+[
+  { "timeStamp": "10:00:00" },
+  { "timeStamp": "16:00:00" }
+]
+Shift: 09:00:00 to 18:00:00
+
+Expected Result:
+{
+  "attendance": "present",
+  "day": 1.0,
+  "inTime": "10:00:00",
+  "outTime": "16:00:00",
+  "workHours": "06:00:00",
+  "lateBy": "01:00:00",
+  "earlyDeparture": "02:00:00"
+}
+
+Calculation:
+Late: 10:00 - 09:00 = 01:00:00
+Early: 18:00 - 16:00 = 02:00:00
+Work: 16:00 - 10:00 = 06:00:00
+
+Pass Criteria: ✓ lateBy = "01:00:00" ✓ earlyDeparture = "02:00:00" ✓ workHours = "06:00:00"
+
+✅ TEST CASE 2.6: Holiday Present
+Test ID: TC-NORMAL-006
+ Description: Employee worked on a holiday
+Test Data:
+Date: 2025-11-20 (Holiday: Diwali)
+Logs:
+[
+  { "timeStamp": "10:00:00" },
+  { "timeStamp": "16:00:00" }
+]
+isHoliday: true
+
+Expected Result:
+{
+  "attendance": "holidayPresent",
+  "attendanceContext": "1/2HolidayPresent 1/2UnPaidLeave",
+  "day": 0.5,
+  "leaveType": "none"
+}
+
+Pass Criteria: ✓ day = 0.5 ✓ attendanceContext includes both Holiday and UnPaidLeave
+
+✅ TEST CASE 6.9: Half Day Unpaid Leave (Week Off)
+Test ID: TC-HALF-DAY-006
+ Description: Half day unpaid on week off
+Test Data:
+Logs:
+[
+  { "timeStamp": "09:00:00" },
+  { "timeStamp": "12:00:00" },
+  {
+    "attendance_status": "unPaidLeaveApproved",
+    "requestedDay": "halfDay"
+  }
+]
+isWeekOff: true
+
+Expected Result:
+{
+  "attendance": "weekoffPresent",
+  "attendanceContext": "1/2WeeklyOff Present 1/2UnPaidLeave",
+  "day": 0.5,
+  "leaveType": "none"
+}
+
+Pass Criteria: ✓ day = 0.5 ✓ attendanceContext includes WeeklyOff
+
+TEST CATEGORY 7: EDGE CASES
+✅ TEST CASE 7.1: Rejected Leave Request
+Test ID: TC-EDGE-001
+ Description: Leave rejected, employee has punches
+Test Data:
+Logs:
+[
+  { "timeStamp": "09:00:00" },
+  { "timeStamp": "18:00:00" },
+  {
+    "attendance_status": "paidLeaveRejected",
+    "requestedDay": "fullDay"
+  }
+]
+
+Expected Result:
+{
+  "attendance": "present",
+  "day": 1.0,
+  "workHours": "09:00:00"
+}
+
+Console Output:
+📌 CASE 1: NORMAL ATTENDANCE
+(Rejected leaves are ignored)
+
+Pass Criteria: ✓ Rejected status ignored ✓ Processed as normal attendance
+
+✅ TEST CASE 7.2: Pending Leave Request
+Test ID: TC-EDGE-002
+ Description: Leave requested but not approved
+Test Data:
+Logs:
+[
+  {
+    "attendance_status": "paidLeaveRequested",
+    "requestedDay": "fullDay"
+  },
+  {
+    "attendance_status": "workFromHomeRequested",
+    "requestedDay": "fullDay"
+  }
+]
+
+Expected Result:
+{
+  "attendance": "absent",
+  "day": 0.0
+}
+
+Console Output:
+(Only Approved statuses count)
+
+Pass Criteria: ✓ Requested statuses ignored ✓ attendance = "absent"
+
+✅ TEST CASE 7.3: No Shift Assigned
+Test ID: TC-EDGE-003
+ Description: Employee has no shift and no GeneralShift exists
+Test Data:
+attendanceSettings: {
+  monJ: { shifts: [] }
+}
+Available Shifts: []
+
+Expected Result:
+null (no record created)
+
+Console Output:
+❌ CRITICAL ERROR: No shift found - Skipping record
+
+Pass Criteria: ✓ No attendance record created ✓ Error logged
+
+✅ TEST CASE 7.4: Very Late Punch (After Shift End)
+Test ID: TC-EDGE-004
+ Description: Employee punched in after shift end time
+Test Data:
+Logs:
+[
+  { "timeStamp": "19:00:00" },
+  { "timeStamp": "20:00:00" }
+]
+Shift: 09:00:00 to 18:00:00
+
+Expected Result:
+{
+  "attendance": "present",
+  "day": 1.0,
+  "inTime": "19:00:00",
+  "outTime": "20:00:00",
+  "workHours": "01:00:00",
+  "lateBy": "10:00:00",
+  "earlyDeparture": "00:00:00"
+}
+
+Calculation:
+Late: 19:00 - 09:00 = 10:00:00
+Work: 20:00 - 19:00 = 01:00:00
+
+Pass Criteria: ✓ System accepts late punch ✓ lateBy calculated correctly
+
+TEST CATEGORY 8: COMPLEX SCENARIOS
+✅ TEST CASE 8.1: WFH with Insufficient Hours
+Test ID: TC-COMPLEX-001
+ Description: WFH approved but worked < 4.5h
+Test Data:
+Logs:
+[
+  { "timeStamp": "14:00:00" },
+  { "timeStamp": "16:00:00" },
+  {
+    "attendance_status": "workFromHomeApproved",
+    "requestedDay": "fullDay",
+    "date_created": "2025-11-21T08:00:00"
+  }
+]
+TotalWorking_Hours: 9
+
+Calculation:
+Work Hours: 2:00:00 (120 minutes)
+Half Required: 4:30:00 (270 minutes)
+120 < 270 → Apply WFH (full day)
+
+Expected Result:
+{
+  "attendance": "workFromHome",
+  "day": 1.0,
+  "inTime": "00:00:00",
+  "outTime": "00:00:00",
+  "workHours": "00:00:00"
+}
+
+Console Output:
+📌 CASE 6: INSUFFICIENT HOURS + APPROVED LEAVE
+   🏆 APPLYING LATEST FULL DAY LEAVE:
+      Status: workFromHomeApproved
+
+Pass Criteria: ✓ WFH applied (ignores actual hours) ✓ Times set to 00:00:00
+
+✅ TEST CASE 8.2: Multiple Leaves Conflict
+Test ID: TC-COMPLEX-002
+ Description: Paid + Unpaid + WFH all approved
+Test Data:
+Logs:
+[
+  { "timeStamp": "18:56:00" },
+  { "timeStamp": "18:57:00" },
+  {
+    "attendance_status": "paidLeaveApproved",
+    "requestedDay": "fullDay",
+    "date_created": "2025-11-21T06:00:00"
+  },
+  {
+    "attendance_status": "unPaidLeaveApproved",
+    "requestedDay": "fullDay",
+    "date_created": "2025-11-21T08:00:00"
+  },
+  {
+    "attendance_status": "workFromHomeApproved",
+    "requestedDay": "fullDay",
+    "date_created": "2025-11-21T10:00:00"  // LATEST
+  }
+]
+
+Expected Result:
+{
+  "attendance": "workFromHome",
+  "day": 1.0
+}
+
+Console Output:
+🏆 LATEST APPROVAL WINS:
+   Status: workFromHomeApproved
+   Created: 2025-11-21T10:00:00
+
+Pass Criteria: ✓ Latest (10:00) wins ✓ attendance = "workFromHome"
+
+✅ TEST CASE 8.3: Holiday + Week Off (Both True)
+Test ID: TC-COMPLEX-003
+ Description: Date is both holiday and week off
+Test Data:
+Date: 2025-12-25 (Christmas + Sunday)
+Logs: []
+isHoliday: true
+isWeekOff: true
+
+Expected Result:
+{
+  "attendance": "holiday",
+  "day": 0.0
+}
+
+Logic: Holiday takes precedence over week off
+Pass Criteria: ✓ attendance = "holiday" (not weekOff)
+
+TEST CATEGORY 9: BATCH PROCESSING
+✅ TEST CASE 9.1: Full Month Processing
+Test ID: TC-BATCH-001
+ Description: Process entire month (30 days)
+Test Data:
+Request:
+{
+  "employeeIds": [10466],
+  "startDate": "2025-11-01",
+  "endDate": "2025-11-30",
+  "tenantId": "c06d5756-422f-42c7-a581-5b225c39b145"
+}
+
+Expected Response:
+{
+  "success": true,
+  "processed": 30,
+  "totalTime": "< 5000ms",
+  "data": [30 attendance records]
+}
+
+Pass Criteria: ✓ All 30 days processed ✓ No errors ✓ Processing time < 5 seconds
+
+✅ TEST CASE 9.2: Multiple Employees
+Test ID: TC-BATCH-002
+ Description: Process 100 employees for 1 month
+Test Data:
+Request:
+{
+  "employeeIds": [10466, 10467, ... 100 IDs],
+  "startDate": "2025-11-01",
+  "endDate": "2025-11-30"
+}
+
+Expected Response:
+{
+  "success": true,
+  "processed": 3000,  // 100 employees × 30 days
+  "totalTime": "< 30000ms"
+}
+
+Pass Criteria: ✓ All records processed ✓ Processed in batches of 100 ✓ No timeout errors
+
+TESTING CHECKLIST
+Pre-Test Setup
+[ ] Database has holiday records
+[ ] Employees have shift assignments
+[ ] TotalWorking_Hours policy set to 9
+[ ] Tenant ID configured correctly
+Test Execution
+[ ] Run tests in sequence (1.1 → 9.2)
+[ ] Check console logs for case identification
+[ ] Verify attendance table entries
+[ ] Verify logs table entries (when no logs exist)
+[ ] Compare expected vs actual results
+Post-Test Validation
+[ ] All day values correct (0.0, 0.5, 1.0)
+[ ] All time calculations accurate
+[ ] Latest wins logic working
+[ ] No duplicate records created
+[ ] Performance within acceptable limits
+
+CONSOLE LOG VERIFICATION GUIDE
+What to Look For in Console:
+1. Case Identification:
+✅ Look for: "📌 CASE X: [DESCRIPTION]"
+✅ Verify correct case detected
+
+2. Day Type Analysis:
+✅ Look for: "🏖️ WEEK OFF: YES/NO"
+✅ Look for: "🎉 HOLIDAY: YES/NO"
+
+3. Shift Selection:
+✅ Look for: "✅ Found shift: [SHIFT_NAME]"
+✅ Look for: "⏰ Entry Time: XX:XX:XX"
+
+4. Logs Analysis:
+✅ Look for: "📋 Total Logs: X"
+✅ Look for: "⏰ Timestamp Logs: X"
+✅ Look for: "📌 Status Logs: X"
+
+5. Time Calculations:
+✅ Look for: "⏱️ TIME CALCULATIONS:"
+✅ Verify: First IN, Last OUT, Work Hours
+✅ Verify: Late By, Early Departure, Overtime
+
+6. Latest Wins Logic:
+✅ Look for: "🏆 LATEST [APPROVAL/STATUS] WINS:"
+✅ Verify date_created shown
+
+7. Final Decision:
+✅ Look for: "✅ FINAL ATTENDANCE:"
+✅ Verify: Attendance type and day value
+
+
+COMMON ISSUES & TROUBLESHOOTING
+Issue 1: Wrong Case Detected
+Symptoms: System shows wrong case in console
+ Check:
+Verify timestamp format (HH:MM:SS)
+Check attendance_status spelling
+Verify requestedDay value
+Issue 2: Time Calculations Wrong
+Symptoms: Work hours don't match
+ Check:
+Shift times correct
+Night shift handling (midnight crossing)
+TotalWorking_Hours value
+Issue 3: Latest Wins Not Working
+Symptoms: Wrong leave/status applied
+ Check:
+date_created format (ISO 8601)
+Multiple entries have different timestamps
+Sorting order (DESC)
+Issue 4: Day Value Incorrect
+Symptoms: day should be 1.0 but shows 0.5
+ Check:
+Paid vs Unpaid leave
+Half day vs Full day
+Week off handling
+Issue 5: No Record Created
+Symptoms: Empty result
+ Check:
+Shift assignment exists
+Employee in personalModule table
+Date within range
+
+QUICK REFERENCE: EXPECTED DAY VALUES
+Scenario
+day Value
+Present (full day)
+1.0
+Absent
+0.0
+Holiday (not worked)
+0.0
+Holiday Present
+1.0
+Week Off
+1.0
+Week Off Present
+1.0
+Paid Leave (full)
+1.0
+Unpaid Leave (full)
+0.0
+WFH (full)
+1.0
+On Duty (full)
+1.0
+Half Paid + Half Present
+1.0
+Half Unpaid + Half Present
+0.5
+Half Paid + Half WeekOff
+1.0
+Half Unpaid + Half WeekOff
+0.5
+Half Paid + Half Holiday
+1.0
+Half Unpaid + Half Holiday
+0.5
+
+
+
+
+QUICK REFERENCE: ATTENDANCE STATUS MAPPING
+attendance_status (in logs)
+attendance (output)
+attendanceContext
+present
+present
+Present
+absent
+absent
+Absent
+holiday
+holiday
+Holiday
+weekOff
+weekOff
+WeeklyOff
+weekoffPresent
+weekoffPresent
+WeeklyOff Present
+holidayPresent
+holidayPresent
+Holiday Present
+paidLeaveApproved
+paidLeave
+On Leave
+unPaidLeaveApproved
+unPaidLeave
+UnPaidLeave
+workFromHomeApproved
+workFromHome
+Work From Home
+onDutyApproved
+onDuty
+On OD
+
+
+TESTING TIPS
+1. Test in Order
+Start with simple cases (No Logs, Normal Attendance) before complex scenarios
+2. Use Console Logs
+Console output shows exactly which case was detected and why
+3. Verify Timestamps
+All timestamps must be in HH:MM:SS format (not HH:MM)
+4. Check date_created
+For "latest wins" logic, ensure different date_created values
+5. Test Boundaries
+Test exactly 4.5 hours (270 mins) and 4:29 (269 mins)
+6. Verify Database
+Check both attendance AND logs tables after test
+7. Clear Data Between Tests
+Delete existing attendance records before re-running tests
+
+SAMPLE TEST EXECUTION SCRIPT
+-- Pre-Test: Clear existing data
+DELETE FROM attendance 
+WHERE employeeId = 10466 
+AND date BETWEEN '2025-11-01' AND '2025-11-30';
+
+-- Test Case 2.1: Perfect Attendance
+-- Insert logs manually or via API
+-- Then run attendance calculation
+-- Verify result
+
+-- Post-Test: Check results
+SELECT 
+  date,
+  attendance,
+  attendanceContext,
+  day,
+  inTime,
+  outTime,
+  workHours,
+  lateBy,
+  earlyDeparture,
+  overTime
+FROM attendance
+WHERE employeeId = 10466
+ORDER BY date;
+
+
+SUCCESS CRITERIA
+All Tests Must Pass:
+✅ 60+ test cases executed
+ ✅ 100% accuracy on time calculations
+ ✅ 100% accuracy on day values
+ ✅ Latest wins logic working correctly
+ ✅ All 6 cases detected properly
+ ✅ Console logs showing correct case identification
+ ✅ Performance < 5 seconds for 30 days single employee
+ ✅ No errors in batch processing
+ ✅ Logs created when no logs exist
+
+FINAL NOTES FOR TESTERS
+Read Console Output: Every calculation shows detailed logs with icons (🎯, 📌, ⏱️, etc.)
+
+
+Test Systematically: Follow test cases in order (1.1 → 9.2)
+
+
+Document Issues: If test fails, note:
+
+
+Test Case ID
+Expected vs Actual result
+Console output
+Database state
+Edge Cases Matter: Pay special attention to:
+
+
+Boundary values (4.5h exactly)
+Midnight crossing shifts
+Multiple conflicting statuses
+Missing data scenarios
+Performance Testing: Monitor:
+
+
+Single employee: < 100ms per day
+100 employees, 30 days: < 30 seconds
+No memory leaks
+
+CONTACT FOR ISSUES
+If any test case fails or behavior is unexpected:
+Copy full console output
+Export database records (attendance + logs)
+Note test case ID and expected vs actual
+Report with all details for debugging
+Happy Testing! 🎯 "attendanceContext": "Holiday Present", "day": 1.0, "workHours": "06:00:00" }
+
+**Console Output**:
+
+📋 DAY TYPE ANALYSIS: 🎉 HOLIDAY: YES 🎊 Holiday Name: Diwali
+FINAL: Holiday Present
+
+**Pass Criteria**:
+✓ attendance = "holidayPresent"
+✓ day = 1.0
+
+---
+
+### ✅ TEST CASE 2.7: Week Off Present
+**Test ID**: TC-NORMAL-007  
+**Description**: Employee worked on a week off  
+
+**Test Data**:
+
+Date: 2025-11-23 (Sunday - Week Off) Logs: [ { "timeStamp": "09:00:00" }, { "timeStamp": "13:00:00" } ] isWeekOff: true
+
+**Expected Result**:
+
+{ "attendance": "weekoffPresent", "attendanceContext": "WeeklyOff Present", "day": 1.0, "workHours": "04:00:00" }
+
+**Pass Criteria**:
+✓ attendance = "weekoffPresent"
+✓ day = 1.0
+
+---
+
+### ✅ TEST CASE 2.8: Multiple Punches (First & Last)
+**Test ID**: TC-NORMAL-008  
+**Description**: Employee punched multiple times  
+
+**Test Data**:
+
+Logs: [ { "timeStamp": "09:00:00" }, { "timeStamp": "12:00:00" }, { "timeStamp": "13:00:00" }, { "timeStamp": "18:00:00" } ]
+
+**Expected Result**:
+
+{ "inTime": "09:00:00", // First punch "outTime": "18:00:00", // Last punch "workHours": "09:00:00" }
+
+**Logic**: System takes FIRST IN and LAST OUT only
+
+**Pass Criteria**:
+✓ inTime = first timestamp
+✓ outTime = last timestamp
+
+---
+
+### ✅ TEST CASE 2.9: Night Shift
+**Test ID**: TC-NORMAL-009  
+**Description**: Night shift crossing midnight  
+
+**Test Data**:
+
+Logs: [ { "timeStamp": "22:00:00" }, { "timeStamp": "06:00:00" } ] Shift: 22:00:00 to 06:00:00
+
+**Expected Result**:
+
+{ "attendance": "present", "day": 1.0, "workHours": "08:00:00" }
+
+**Calculation**:
+
+Shift crosses midnight, so add 24 hours to end time 22:00 (1320 mins) to 06:00 (360 + 1440 = 1800 mins) Work: 1800 - 1320 = 480 mins = 08:00:00
+
+**Pass Criteria**:
+✓ Handles midnight crossing correctly
+✓ workHours = "08:00:00"
+
+---
+
+## TEST CATEGORY 3: SINGLE PUNCH (CASE 2)
+
+### ✅ TEST CASE 3.1: Only IN Punch
+**Test ID**: TC-SINGLE-001  
+**Description**: Employee only punched IN, no OUT  
+
+**Test Data**:
+
+Logs: [ { "timeStamp": "09:00:00", "attendance_status": null } ]
+
+**Expected Result**:
+
+{ "attendance": "absent", "attendanceContext": "Absent", "day": 0.0, "inTime": null, "outTime": null, "workHours": "00:00:00" }
+
+**Console Output**:
+
+📌 CASE 2: SINGLE PUNCH - MARKING ABSENT 📝 Description: Only one punch found (incomplete) ❌ Result: Absent (day: 0.0)
+
+**Pass Criteria**:
+✓ attendance = "absent"
+✓ day = 0.0
+
+---
+
+## TEST CATEGORY 4: WORK FROM HOME (CASE 3)
+
+### ✅ TEST CASE 4.1: WFH Full Day with Punches
+**Test ID**: TC-WFH-001  
+**Description**: WFH approved + employee punched in/out  
+
+**Test Data**:
+
+Logs: [ { "timeStamp": "09:15:00", "attendance_status": null }, { "timeStamp": "18:30:00", "attendance_status": null }, { "timeStamp": null, "attendance_status": "workFromHomeApproved", "requestedDay": "fullDay", "date_created": "2025-11-20T10:00:00" } ]
+
+**Expected Result**:
+
+{ "attendance": "workFromHome", "attendanceContext": "Work From Home", "day": 1.0, "inTime": "09:15:00", "outTime": "18:30:00", "workHours": "09:15:00", "lateBy": "00:15:00", "overTime": "00:15:00" }
+
+**Console Output**:
+
+📌 CASE 3/4: TIMESTAMP + FULL DAY APPROVED (WFH/OD) 🏆 LATEST APPROVAL WINS: Status: workFromHomeApproved 🏠 Final Attendance: Work From Home (day: 1.0)
+
+**Pass Criteria**:
+✓ attendance = "workFromHome"
+✓ day = 1.0
+✓ Work hours calculated from punches
+
+---
+
+### ✅ TEST CASE 4.2: Multiple WFH & OD (Latest Wins)
+**Test ID**: TC-WFH-002  
+**Description**: Both WFH and OD approved, latest wins  
+
+**Test Data**:
+
+Logs: [ { "timeStamp": "09:00:00" }, { "timeStamp": "18:00:00" }, { "attendance_status": "workFromHomeApproved", "requestedDay": "fullDay", "date_created": "2025-11-21T08:00:00" }, { "attendance_status": "onDutyApproved", "requestedDay": "fullDay", "date_created": "2025-11-21T10:00:00" // LATEST } ]
+
+**Expected Result**:
+
+{ "attendance": "onDuty", "attendanceContext": "On OD", "day": 1.0 }
+
+**Console Output**:
+
+🏆 LATEST APPROVAL WINS: Status: onDutyApproved Created: 2025-11-21T10:00:00 🚗 Final Attendance: On Duty
+
+**Pass Criteria**:
+✓ Latest approval (10:00) wins
+✓ attendance = "onDuty"
+
+---
+
+## TEST CATEGORY 5: MANUAL STATUS ENTRIES (CASE 5)
+
+### ✅ TEST CASE 5.1: Paid Leave Full Day
+**Test ID**: TC-MANUAL-001  
+**Description**: Paid leave approved, no punches  
+
+**Test Data**:
+
+Logs: [ { "timeStamp": null, "attendance_status": "paidLeaveApproved", "requestedDay": "fullDay", "leaveType": "sickLeave", "mode": "manual", "date_created": "2025-11-20T09:00:00" } ]
+
+**Expected Result**:
+
+{ "attendance": "paidLeave", "attendanceContext": "On Leave", "day": 1.0, "inTime": "00:00:00", "outTime": "00:00:00", "workHours": "00:00:00", "leaveType": "sickLeave" }
+
+**Console Output**:
+
+📌 CASE 5: NO TIMESTAMP, ONLY STATUS LOGS 🏆 LATEST STATUS WINS: Status: paidLeaveApproved ✅ MAPPED ATTENDANCE: Attendance: paidLeave Day: 1.0
+
+**Pass Criteria**:
+✓ attendance = "paidLeave"
+✓ day = 1.0
+✓ leaveType = "sickLeave"
+
+---
+
+### ✅ TEST CASE 5.2: Unpaid Leave Full Day
+**Test ID**: TC-MANUAL-002  
+**Description**: Unpaid leave approved  
+
+**Test Data**:
+
+Logs: [ { "timeStamp": null, "attendance_status": "unPaidLeaveApproved", "requestedDay": "fullDay", "mode": "manual" } ]
+
+**Expected Result**:
+
+{ "attendance": "unPaidLeave", "attendanceContext": "UnPaidLeave", "day": 0.0, "leaveType": "none" }
+
+**Pass Criteria**:
+✓ attendance = "unPaidLeave"
+✓ day = 0.0
+
+---
+
+### ✅ TEST CASE 5.3: Multiple Status Entries (Latest Wins)
+**Test ID**: TC-MANUAL-003  
+**Description**: Multiple manual entries, latest wins  
+
+**Test Data**:
+
+Logs: [ { "attendance_status": "present", "date_created": "2025-11-21T06:00:00" }, { "attendance_status": "absent", "date_created": "2025-11-21T07:00:00" }, { "attendance_status": "paidLeaveApproved", "date_created": "2025-11-21T08:00:00" // LATEST } ]
+
+**Expected Result**:
+
+{ "attendance": "paidLeave", "day": 1.0 }
+
+**Console Output**:
+
+🏆 LATEST STATUS WINS: Status: paidLeaveApproved Created: 2025-11-21T08:00:00 (LATEST)
+
+**Pass Criteria**:
+✓ Latest entry (08:00) wins
+✓ attendance = "paidLeave"
+
+---
+
+## TEST CATEGORY 6: INSUFFICIENT HOURS (CASE 6)
+
+### ✅ TEST CASE 6.1: Worked < 4.5h + Full Day Leave
+**Test ID**: TC-INSUFFICIENT-001  
+**Description**: Worked 1 minute, has full day leave  
+
+**Test Data**:
+
+Logs: [ { "attendance_status": "paidLeaveApproved", "requestedDay": "fullDay", "date_created": "2025-08-30T06:56:22" }, { "attendance_status": "unPaidLeaveApproved", "requestedDay": "fullDay", "date_created": "2025-08-30T08:09:09" // LATEST }, { "timeStamp": "18:56:48" }, { "timeStamp": "18:57:57" } ] TotalWorking_Hours: 9
+
+**Calculation**:
+
+Work Hours: 1 minute 9 seconds Half Required: 4.5 hours (270 minutes) 1 min < 270 mins → INSUFFICIENT Latest Leave: unPaidLeaveApproved
+
+**Expected Result**:
+
+{ "attendance": "unPaidLeave", "attendanceContext": "UnPaidLeave", "day": 0.0, "inTime": "00:00:00", "outTime": "00:00:00", "workHours": "00:00:00" }
+
+**Console Output**:
+
+📌 CASE 6: INSUFFICIENT HOURS + APPROVED LEAVE ⏱️ WORK HOURS CHECK: Worked: 00:01:09 (1 mins) Half Required: 04:30:00 (270 mins) ❌ INSUFFICIENT 🏆 APPLYING LATEST FULL DAY LEAVE: Status: unPaidLeaveApproved ⚠️ Ignoring actual punch times
+
+**Pass Criteria**:
+✓ Punch times ignored
+✓ Latest leave applied
+✓ attendance = "unPaidLeave"
+✓ day = 0.0
+
+---
+
+### ✅ TEST CASE 6.2: Worked Exactly 4.5h (Boundary)
+**Test ID**: TC-INSUFFICIENT-002  
+**Description**: Worked exactly half required hours  
+
+**Test Data**:
+
+Logs: [ { "timeStamp": "09:00:00" }, { "timeStamp": "13:30:00" }, { "attendance_status": "paidLeaveApproved", "requestedDay": "fullDay" } ] TotalWorking_Hours: 9
+
+**Calculation**:
+
+Work Hours: 4:30:00 (270 minutes) Half Required: 4:30:00 (270 minutes) 270 >= 270 → SUFFICIENT (not applying leave)
+
+**Expected Result**:
+
+{ "attendance": "present", "day": 1.0, "workHours": "04:30:00" }
+
+**Console Output**:
+
+✅ SUFFICIENT HOURS: Processing as normal attendance
+
+**Pass Criteria**:
+✓ Leave NOT applied (worked enough)
+✓ attendance = "present"
+
+---
+
+### ✅ TEST CASE 6.3: Worked 4h 29min (Just Below Half)
+**Test ID**: TC-INSUFFICIENT-003  
+**Description**: Worked 1 minute less than required  
+
+**Test Data**:
+
+Logs: [ { "timeStamp": "09:00:00" }, { "timeStamp": "13:29:00" }, { "attendance_status": "unPaidLeaveApproved", "requestedDay": "fullDay" } ]
+
+**Calculation**:
+
+Work Hours: 4:29:00 (269 minutes) Half Required: 4:30:00 (270 minutes) 269 < 270 → INSUFFICIENT
+
+**Expected Result**:
+
+{ "attendance": "unPaidLeave", "day": 0.0, "inTime": "00:00:00", "outTime": "00:00:00" }
+
+**Pass Criteria**:
+✓ Leave applied (below threshold)
+✓ attendance = "unPaidLeave"
+
+---
+
+### ✅ TEST CASE 6.4: Half Day Paid Leave (Regular Day)
+**Test ID**: TC-HALF-DAY-001  
+**Description**: Worked < 4.5h with half day paid leave  
+
+**Test Data**:
+
+Date: 2025-11-10 (Regular Day) Logs: [ { "timeStamp": "09:00:00" }, { "timeStamp": "11:00:00" }, { "attendance_status": "paidLeaveApproved", "requestedDay": "halfDay", "leaveType": "sickLeave" } ] isHoliday: false isWeekOff: false
+
+**Expected Result**:
+
+{ "attendance": "present", "attendanceContext": "1/2Present 1/2On Leave", "day": 1.0, "inTime": null, "outTime": null, "leaveType": "sickLeave" }
+
+**Pass Criteria**:
+✓ attendanceContext = "1/2Present 1/2On Leave"
+✓ day = 1.0 (paid leave)
+
+---
+
+### ✅ TEST CASE 6.5: Half Day Paid Leave (Holiday)
+**Test ID**: TC-HALF-DAY-002  
+**Description**: Half day leave on holiday  
+
+**Test Data**:
+
+Logs: [ { "timeStamp": "10:00:00" }, { "timeStamp": "12:00:00" }, { "attendance_status": "paidLeaveApproved", "requestedDay": "halfDay", "leaveType": "casualLeave" } ] isHoliday: true
+
+**Expected Result**:
+
+{ "attendance": "holidayPresent", "attendanceContext": "1/2HolidayPresent 1/2On Leave", "day": 1.0, "leaveType": "casualLeave" }
+
+**Pass Criteria**:
+✓ attendanceContext includes "Holiday"
+✓ day = 1.0
+
+---
+
+### ✅ TEST CASE 6.6: Half Day Paid Leave (Week Off)
+**Test ID**: TC-HALF-DAY-003  
+**Description**: Half day leave on week off  
+
+**Test Data**:
+
+Logs: [ { "timeStamp": "09:00:00" }, { "timeStamp": "11:30:00" }, { "attendance_status": "paidLeaveApproved", "requestedDay": "halfDay" } ] isWeekOff: true
+
+**Expected Result**:
+
+{ "attendance": "weekoffPresent", "attendanceContext": "1/2WeeklyOff Present 1/2On Leave", "day": 1.0 }
+
+**Pass Criteria**:
+✓ attendanceContext includes "WeeklyOff"
+✓ day = 1.0
+
+---
+
+### ✅ TEST CASE 6.7: Half Day Unpaid Leave (Regular Day)
+**Test ID**: TC-HALF-DAY-004  
+**Description**: Half day unpaid leave  
+
+**Test Data**:
+
+Logs: [ { "timeStamp": "09:00:00" }, { "timeStamp": "11:00:00" }, { "attendance_status": "unPaidLeaveApproved", "requestedDay": "halfDay" } ]
+
+**Expected Result**:
+
+{ "attendance": "present", "attendanceContext": "1/2Present 1/2UnPaidLeave", "day": 0.5, "leaveType": "none" }
+
+**Pass Criteria**:
+✓ day = 0.5 (unpaid)
+✓ attendanceContext includes "UnPaidLeave"
+
+---
+
+### ✅ TEST CASE 6.8: Half Day Unpaid Leave (Holiday)
+**Test ID**: TC-HALF-DAY-005  
+**Description**: Half day unpaid on holiday  
+
+**Test Data**:
+
+Logs: [ { "timeStamp": "10:00:00" }, { "timeStamp": "13:00:00" }, { "attendance_status": "unPaidLeaveApproved", "requestedDay": "halfDay" } ] isHoliday: true
+
+**Expected Result**:
+
+{ "attendance": "holidayPresent",}
+
+

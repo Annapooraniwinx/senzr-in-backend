@@ -2,7 +2,7 @@ export default (router, { services }) => {
   router.post("/re-attendance", async (req, res) => {
     const startTime = Date.now();
     console.log(
-      "🚀HeinaJeson Starting attendance processing for",
+      "🚀surthi Heina Jeson Starting attendance processing for",
       req.body.employeeIds.length,
       "employees"
     );
@@ -44,7 +44,7 @@ export default (router, { services }) => {
       }
       const endTime = Date.now();
       console.log(
-        `🏁 Total processing time: ${endTime - startTime}ms for ${
+        `🏁surthi Jeson Total processing time: ${endTime - startTime}ms for ${
           employeeIds.length
         } employees`
       );
@@ -829,6 +829,7 @@ function calculateAttendanceForDate(
   }
 
   // CASE 5: No timestamp, only approved status (full day leaves/statuses)
+  // In CASE 5: Add this check to detect and route half-day leaves
   if (!hasTimestamp && statusLogs.length > 0) {
     console.log("\n" + "📌".repeat(40));
     console.log("📌 CASE 5: NO TIMESTAMP, ONLY STATUS LOGS");
@@ -837,6 +838,7 @@ function calculateAttendanceForDate(
       " 📝 Description: No punches, only status entries (leaves/manual)"
     );
     console.log(` 📋 Found ${statusLogs.length} status log(s)`);
+
     const approvedStatuses = statusLogs.filter((log) =>
       [
         "present",
@@ -853,18 +855,44 @@ function calculateAttendanceForDate(
         "paidLeaveApproved",
       ].includes(log.attendance_status)
     );
+
     if (approvedStatuses.length > 0) {
-      // Get the latest status
       const latestStatus = approvedStatuses.sort(
         (a, b) =>
           new Date(b.date_created).getTime() -
           new Date(a.date_created).getTime()
       )[0];
+
+      // ✅ CHECK FOR HALF-DAY REQUEST
+      if (latestStatus.requestedDay === "halfDay") {
+        console.log(
+          "\n🎯 HALF-DAY REQUEST DETECTED - ROUTING TO HALF-DAY PROCESSOR"
+        );
+        console.log(`Status: ${latestStatus.attendance_status}`);
+        console.log(`Created: ${latestStatus.date_created}`);
+        console.log("=".repeat(80) + "\n");
+
+        return processHalfDayAttendance(
+          employee,
+          date,
+          selectedShift,
+          latestStatus,
+          isHoliday,
+          isWeekOff,
+          shiftDurationMins,
+          tenantId,
+          toHHMMSS,
+          false // hasPunch = false (no timestamps)
+        );
+      }
+
+      // Otherwise continue with full-day mapping
       console.log("\n 🏆 LATEST STATUS WINS:");
       console.log(` Status: ${latestStatus.attendance_status}`);
       console.log(` Created: ${latestStatus.date_created}`);
       console.log(` Mode: ${latestStatus.mode}`);
       console.log(` Requested Day: ${latestStatus.requestedDay || "N/A"}`);
+
       const statusMapping = {
         present: { attendance: "present", context: "Present", day: 1.0 },
         absent: { attendance: "absent", context: "Absent", day: 0.0 },
@@ -938,6 +966,177 @@ function calculateAttendanceForDate(
         shouldCreateLog: false,
       };
     }
+  }
+
+  // ✅ CORRECTED: processHalfDayAttendance function
+  function processHalfDayAttendance(
+    employee,
+    date,
+    selectedShift,
+    halfDayLeave,
+    isHoliday,
+    isWeekOff,
+    shiftDurationMins,
+    tenantId,
+    toHHMMSS,
+    hasPunch
+  ) {
+    const isPaidLeave = halfDayLeave.attendance_status === "paidLeaveApproved";
+    const isUnpaidLeave =
+      halfDayLeave.attendance_status === "unPaidLeaveApproved";
+
+    let attendance, attendanceContext, day, leaveType;
+
+    console.log("\n" + "🎯".repeat(40));
+    console.log("🎯 PROCESSING HALF-DAY LEAVE");
+    console.log("🎯".repeat(40));
+    console.log(` Leave Type: ${isPaidLeave ? "PAID" : "UNPAID"}`);
+    console.log(` Has Punch: ${hasPunch ? "YES" : "NO"}`);
+    console.log(
+      ` Day Type: ${isHoliday ? "HOLIDAY" : isWeekOff ? "WEEKOFF" : "REGULAR"}`
+    );
+
+    if (isPaidLeave) {
+      leaveType = halfDayLeave.leaveType || null;
+
+      if (!isWeekOff && !isHoliday) {
+        // Regular day + Paid Leave
+        attendance = "present";
+        if (hasPunch) {
+          attendanceContext = "1/2Present 1/2On Leave";
+        } else {
+          attendanceContext = "1/2On Leave";
+        }
+        day = 1.0;
+        console.log(
+          ` ✅ Regular Day + Paid: attendance=${attendance}, context=${attendanceContext}, day=${day}`
+        );
+      } else if (!isWeekOff && isHoliday) {
+        // Holiday + Paid Leave
+        if (hasPunch) {
+          attendance = "holidayPresent";
+          attendanceContext = "1/2Holiday Present 1/2On Leave";
+        } else {
+          attendance = "holiday";
+          attendanceContext = "1/2Holiday 1/2On Leave";
+        }
+        day = 1.0;
+        console.log(
+          ` ✅ Holiday + Paid: attendance=${attendance}, context=${attendanceContext}, day=${day}`
+        );
+      } else if (isWeekOff && !isHoliday) {
+        // WeekOff + Paid Leave
+        if (hasPunch) {
+          attendance = "weekoffPresent";
+          attendanceContext = "1/2WeeklyOff Present 1/2On Leave";
+        } else {
+          attendance = "weekOff";
+          attendanceContext = "1/2WeeklyOff 1/2On Leave";
+        }
+        day = 1.0;
+        console.log(
+          ` ✅ WeekOff + Paid: attendance=${attendance}, context=${attendanceContext}, day=${day}`
+        );
+      } else if (isWeekOff && isHoliday) {
+        // WeekOff + Holiday + Paid Leave
+        if (hasPunch) {
+          attendance = "weekoffPresent";
+          attendanceContext = "1/2WeeklyOff Present 1/2Holiday 1/2On Leave";
+        } else {
+          attendance = "weekOff";
+          attendanceContext = "1/2WeeklyOff 1/2Holiday 1/2On Leave";
+        }
+        day = 1.0;
+        console.log(
+          ` ✅ WeekOff+Holiday + Paid: attendance=${attendance}, context=${attendanceContext}, day=${day}`
+        );
+      }
+    } else if (isUnpaidLeave) {
+      leaveType = "none";
+
+      if (!isWeekOff && !isHoliday) {
+        // Regular day + Unpaid Leave
+        if (hasPunch) {
+          attendance = "present";
+          attendanceContext = "1/2Present 1/2UnPaidLeave";
+          day = 0.5;
+        } else {
+          attendance = "absent";
+          attendanceContext = "1/2Absent 1/2UnPaidLeave";
+          day = 0.0;
+        }
+        console.log(
+          ` ✅ Regular Day + Unpaid: attendance=${attendance}, context=${attendanceContext}, day=${day}`
+        );
+      } else if (!isWeekOff && isHoliday) {
+        // Holiday + Unpaid Leave
+        if (hasPunch) {
+          attendance = "holidayPresent";
+          attendanceContext = "1/2Holiday Present 1/2UnPaidLeave";
+          day = 0.5;
+        } else {
+          attendance = "holiday";
+          attendanceContext = "1/2Holiday 1/2UnPaidLeave";
+          day = 0.0;
+        }
+        console.log(
+          ` ✅ Holiday + Unpaid: attendance=${attendance}, context=${attendanceContext}, day=${day}`
+        );
+      } else if (isWeekOff && !isHoliday) {
+        // WeekOff + Unpaid Leave
+        if (hasPunch) {
+          attendance = "weekoffPresent";
+          attendanceContext = "1/2WeeklyOff Present 1/2UnPaidLeave";
+          day = 0.5;
+        } else {
+          attendance = "weekOff";
+          attendanceContext = "1/2WeeklyOff 1/2UnPaidLeave";
+          day = 0.0;
+        }
+        console.log(
+          ` ✅ WeekOff + Unpaid: attendance=${attendance}, context=${attendanceContext}, day=${day}`
+        );
+      } else if (isWeekOff && isHoliday) {
+        // WeekOff + Holiday + Unpaid Leave
+        if (hasPunch) {
+          attendance = "weekoffPresent";
+          attendanceContext = "1/2WeeklyOff Present 1/2Holiday 1/2UnPaidLeave";
+          day = 0.5;
+        } else {
+          attendance = "weekOff";
+          attendanceContext = "1/2WeeklyOff 1/2Holiday 1/2UnPaidLeave";
+          day = 0.0;
+        }
+        console.log(
+          ` ✅ WeekOff+Holiday + Unpaid: attendance=${attendance}, context=${attendanceContext}, day=${day}`
+        );
+      }
+    }
+
+    console.log("=".repeat(80) + "\n");
+
+    return {
+      employeeId: employee.id,
+      date,
+      shiftName: selectedShift.shift,
+      shiftDuration: toHHMMSS(shiftDurationMins),
+      workHours: hasPunch ? "00:00:00" : "00:00:00",
+      breakTime: "00:00:00",
+      overTime: "00:00:00",
+      earlyDeparture: "00:00:00",
+      lateBy: "00:00:00",
+      attendance,
+      attendanceContext,
+      mode: "reCalculate",
+      action: hasPunch ? "punchedIn" : "notPunchedIn",
+      status: hasPunch ? "out" : "notPunchedIn",
+      inTime: hasPunch || null,
+      outTime: hasPunch || null,
+      leaveType,
+      tenant: tenantId,
+      day,
+      uniqueId: `${date}-${employee.id}-${tenantId}`,
+    };
   }
 
   // CASE 6: Timestamp exists but worked less than half + has approved leaves
@@ -1046,36 +1245,80 @@ function calculateAttendanceForDate(
         };
       }
       // Check for half day leaves
-      const halfDayLeaves = statusLogs.filter(
+      // ————————————————————————————————————————————————————————————————
+      // FINAL CORRECTED HALF-DAY LOGIC (2025 HR Standard)
+      // ————————————————————————————————————————————————————————————————
+      const halfDayLeave = statusLogs.find(
         (log) =>
+          log.requestedDay === "halfDay" &&
           ["paidLeaveApproved", "unPaidLeaveApproved"].includes(
             log.attendance_status
-          ) && log.requestedDay === "halfDay"
+          )
       );
-      if (halfDayLeaves.length > 0) {
-        console.log(` ✅ Found ${halfDayLeaves.length} half day leave(s)`);
 
-        const latestHalfDay = halfDayLeaves.sort(
-          (a, b) =>
-            new Date(b.date_created).getTime() -
-            new Date(a.date_created).getTime()
-        )[0];
-        console.log("\n 🏆 APPLYING LATEST HALF DAY LEAVE:");
-        console.log(` Status: ${latestHalfDay.attendance_status}`);
-        console.log(` Created: ${latestHalfDay.date_created}`);
-        console.log(` Requested: halfDay`);
-        console.log("=".repeat(80) + "\n");
-        return processHalfDayAttendance(
-          employee,
-          date,
-          selectedShift,
-          latestHalfDay,
-          isHoliday,
-          isWeekOff,
-          shiftDurationMins,
-          tenantId,
-          toHHMMSS
+      if (halfDayLeave) {
+        console.log("HALF-DAY LEAVE APPROVED → APPLYING CORRECT HR LOGIC");
+        const isPaid = halfDayLeave.attendance_status === "paidLeaveApproved";
+        const hasPunch = timestampLogs.length > 0;
+
+        const dayValue = isPaid ? 1.0 : hasPunch ? 0.5 : 0.0;
+
+        let attendance, context;
+
+        if (isHoliday) {
+          attendance = hasPunch ? "holidayPresent" : "holiday";
+          context = hasPunch
+            ? `1/2Holiday Present 1/2${isPaid ? "On Leave" : "UnPaidLeave"}`
+            : `1/2Holiday 1/2${isPaid ? "On Leave" : "UnPaidLeave"}`;
+        } else if (isWeekOff) {
+          attendance = hasPunch ? "weekoffPresent" : "weekOff";
+          context = hasPunch
+            ? `1/2WeeklyOff Present 1/2${isPaid ? "On Leave" : "UnPaidLeave"}`
+            : `1/2WeeklyOff 1/2${isPaid ? "On Leave" : "UnPaidLeave"}`;
+        } else {
+          // Regular Day
+          if (hasPunch) {
+            attendance = "present";
+            context = `1/2Present 1/2${isPaid ? "On Leave" : "UnPaidLeave"}`;
+          } else {
+            attendance = isPaid ? "present" : "unPaidLeave"; // or "absent"
+            context = isPaid
+              ? "1/2Present 1/2On Leave"
+              : "1/2Absent 1/2UnPaidLeave";
+          }
+        }
+
+        console.log(
+          `FINAL → Attendance: ${attendance} | Context: ${context} | Day: ${dayValue}`
         );
+
+        return {
+          employeeId: employee.id,
+          date,
+          shiftName: selectedShift?.shift || "GeneralShift",
+          shiftDuration: selectedShift
+            ? toHHMMSS(shiftDurationMins)
+            : "09:00:00",
+          workHours: hasPunch && isPaid ? toHHMMSS(workingMins) : "00:00:00",
+          breakTime: "00:00:00",
+          overTime: "00:00:00",
+          earlyDeparture: "00:00:00",
+          lateBy: "00:00:00",
+          attendance,
+          attendanceContext: context,
+          mode: "reCalculate",
+          action: hasPunch ? "punchedIn" : "notPunchedIn",
+          status: hasPunch ? "out" : "notPunchedIn",
+          inTime: hasPunch ? timestampLogs[0].timeStamp : null,
+          outTime: hasPunch
+            ? timestampLogs[timestampLogs.length - 1].timeStamp
+            : null,
+          leaveType: isPaid ? halfDayLeave.leaveType || null : "none",
+          tenant: tenantId,
+          day: dayValue,
+          uniqueId: `${date}-${employee.id}-${tenantId}`,
+          shouldCreateLog: false,
+        };
       }
     } else {
       console.log("\n ✅ SUFFICIENT HOURS: Processing as normal attendance");
