@@ -326,8 +326,8 @@ async function sendEmail({ to, subject, pdfBuffer, from, tenantName, today }) {
   const transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
-      user: "iwinxdigitaltechnologies@gmail.com",
-      pass: "uoav ukqz ycjq vskn",
+      user: "fieldopsbysenzr@gmail.com",
+      pass: "nsdy pgax pziz gazm",
     },
   });
 

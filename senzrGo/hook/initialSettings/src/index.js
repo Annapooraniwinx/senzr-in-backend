@@ -47,7 +47,7 @@ export default ({ action }, { services, database }) => {
         service: "gmail",
         auth: {
           user: "fieldopsbysenzr@gmail.com",
-          pass: "gokz sdtc zbnm dmep",
+          pass: "nsdy pgax pziz gazm",
         },
       });
       console.log("📧 Email transporter initialized");

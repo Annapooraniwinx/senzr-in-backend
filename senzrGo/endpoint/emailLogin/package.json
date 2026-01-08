@@ -25,7 +25,8 @@
 		"validate": "directus-extension validate"
 	},
 	"devDependencies": {
-		"@directus/extensions-sdk": "16.0.2"
+		"@directus/extensions-sdk": "16.0.2",
+		"baseline-browser-mapping": "^2.9.11"
 	},
 	"dependencies": {
 		"crypto": "^1.0.1",

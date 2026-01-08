@@ -67,7 +67,7 @@ export default (router, { services }) => {
           service: "gmail",
           auth: {
             user: "fieldopsbysenzr@gmail.com",
-            pass: "gokz sdtc zbnm dmep",
+            pass: "nsdy pgax pziz gazm",
           },
         });
 
