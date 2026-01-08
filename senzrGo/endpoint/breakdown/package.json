@@ -1,5 +1,5 @@
 {
-	"name": "salaryVerification",
+	"name": "breakdown",
 	"description": "Please enter a description for your extension",
 	"icon": "extension",
 	"version": "1.0.0",
@@ -25,6 +25,6 @@
 		"validate": "directus-extension validate"
 	},
 	"devDependencies": {
-		"@directus/extensions-sdk": "16.0.1"
+		"@directus/extensions-sdk": "17.0.4"
 	}
 }

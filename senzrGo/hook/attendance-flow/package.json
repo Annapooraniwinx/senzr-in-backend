@@ -1,19 +1,19 @@
 {
-	"name": "salaryVerification",
+	"name": "attendance-flow",
 	"description": "Please enter a description for your extension",
 	"icon": "extension",
 	"version": "1.0.0",
 	"keywords": [
 		"directus",
 		"directus-extension",
-		"directus-extension-endpoint"
+		"directus-extension-hook"
 	],
 	"type": "module",
 	"files": [
 		"dist"
 	],
 	"directus:extension": {
-		"type": "endpoint",
+		"type": "hook",
 		"path": "dist/index.js",
 		"source": "src/index.js",
 		"host": "^10.10.0"
@@ -25,6 +25,6 @@
 		"validate": "directus-extension validate"
 	},
 	"devDependencies": {
-		"@directus/extensions-sdk": "16.0.1"
+		"@directus/extensions-sdk": "17.0.3"
 	}
 }

@@ -325,10 +325,8 @@ function calculatePTFromRules(stateTaxRules, gender, monthlyCtc, currentMonth) {
       ? monthlyCtc >= low
       : monthlyCtc >= low && monthlyCtc <= high;
     console.log(
-      `[calculatePTFromRules] Range "${
-        r.salaryRange
-      }": low=${low}, high=${high}, CTC=${monthlyCtc} → ${
-        isMatch ? "✅ MATCH" : "❌"
+      `[calculatePTFromRules] Range "${r.salaryRange
+      }": low=${low}, high=${high}, CTC=${monthlyCtc} → ${isMatch ? "✅ MATCH" : "❌"
       }`
     ); // CHANGED
     return isMatch;
@@ -431,13 +429,11 @@ function getLWFFromRules(stateTaxRules, startDate, endDate) {
     const rangeEnd = new Date(year, endMonth - 1, endDay);
 
     console.log(
-      `[getLWFFromRules] Payroll period: ${
-        payrollStart.toISOString().split("T")[0]
+      `[getLWFFromRules] Payroll period: ${payrollStart.toISOString().split("T")[0]
       } to ${payrollEnd.toISOString().split("T")[0]}`
     ); // ADD THIS
     console.log(
-      `[getLWFFromRules] LWF deduction period: ${
-        rangeStart.toISOString().split("T")[0]
+      `[getLWFFromRules] LWF deduction period: ${rangeStart.toISOString().split("T")[0]
       } to ${rangeEnd.toISOString().split("T")[0]}`
     ); // ADD THIS
 

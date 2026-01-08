@@ -129,6 +129,8 @@ module.exports = function registerEndpoint(router, { services }) {
           accountability: req.accountability,
         });
 
+
+
         const personalModuleData = await personalModuleService.readByQuery({
           filter: { id: { _in: paginatedEmployeeIds } },
           fields: [
@@ -177,6 +179,50 @@ module.exports = function registerEndpoint(router, { services }) {
           personalModuleData.map((p) => [p.id, p])
         );
 
+        // --- FETCH PAYROLL EXCEL DATA (MOVED AND UPDATED) ---
+        const payrollExcelService = new ItemsService("payrollExcel", {
+          schema: req.schema,
+          accountability: req.accountability,
+        });
+
+        // Calculate month/year string (YYYY-MM) from the end date
+        const endDateObj = new Date(betweenDates[1]);
+        const monthStr = String(endDateObj.getMonth() + 1).padStart(2, "0");
+        const yearStr = endDateObj.getFullYear();
+        const monthYear = `${yearStr}-${monthStr}`;
+        console.log("📅 [DEBUG] Calculated Month for Payroll Excel:", monthYear);
+
+        // Map PKs (UUID) to String IDs (e.g., EMP001) for filtering
+        const employeeStringIds = personalModuleData
+          .map((p) => p.employeeId)
+          .filter((id) => id); // Filter out null/undefined
+
+        let payrollExcelMapStrId = {}; // Map keyed by String ID
+
+        if (employeeStringIds.length > 0) {
+          const payrollExcelData = await payrollExcelService.readByQuery({
+            filter: {
+              _and: [
+                { employeeId: { _in: employeeStringIds } },
+                { month: { _eq: monthYear } },
+                { tenant: { tenantId: { _eq: tenantIdFilter } } },
+              ],
+            },
+            fields: ["employeeId", "payrollFormat"],
+            limit: -1,
+          });
+
+          console.log("📊 [DEBUG] Payroll Excel Records Found:", payrollExcelData.length);
+          if (payrollExcelData.length > 0) {
+            console.log("📄 [DEBUG] Sample Excel Record:", JSON.stringify(payrollExcelData[0], null, 2));
+          }
+
+          payrollExcelMapStrId = Object.fromEntries(
+            payrollExcelData.map((p) => [p.employeeId, p])
+          );
+        }
+        // ----------------------------------------------------
+
         const result = {};
         const leaveDeductions = {};
         paginatedEmployeeIds.forEach((empId) => {
@@ -195,6 +241,35 @@ module.exports = function registerEndpoint(router, { services }) {
 
           if (record.attendance && empData.hasOwnProperty(record.attendance)) {
             empData[record.attendance] += 1;
+          }
+
+          // Check if payrollExcel data exists for this employee
+          // Retrieve String ID for the current employee (record.employeeId is PK/UUID)
+          const empStringId = personalModuleMap[record.employeeId]?.employeeId;
+          const payrollExcelEntry = empStringId ? payrollExcelMapStrId[empStringId] : null;
+
+          if (payrollExcelEntry && payrollExcelEntry.payrollFormat) {
+            const fmt = payrollExcelEntry.payrollFormat;
+
+            // Map fields from payrollFormat
+            // Keys: LWP, Present Days, WorkFrom Home, Payable Days
+            if (fmt["LWP"] !== undefined) {
+              empData.unpaidLeave = Number(fmt["LWP"]) || 0;
+            }
+            if (fmt["Present Days"] !== undefined) {
+              empData.present = Number(fmt["Present Days"]) || 0;
+            }
+            if (fmt["WorkFrom Home"] !== undefined) {
+              empData.workFromHome = Number(fmt["WorkFrom Home"]) || 0;
+            }
+            if (fmt["Payable Days"] !== undefined) {
+              empData.totalPayableDays = Number(fmt["Payable Days"]) || 0;
+            }
+
+            console.log(`✅ [DEBUG] Using Payroll Excel for Employee: ${record.employeeId}`);
+            return;
+          } else {
+            console.log(`❌ [DEBUG] No Payroll Excel for Employee: ${record.employeeId}`);
           }
 
           let payableDay =
@@ -240,8 +315,8 @@ module.exports = function registerEndpoint(router, { services }) {
           if (
             record.earlyDeparture !== "00:00:00" &&
             record.earlyDeparture >
-              personalModuleMap[record.employeeId]?.config?.attendancePolicies
-                ?.setExitTimeLimit
+            personalModuleMap[record.employeeId]?.config?.attendancePolicies
+              ?.setExitTimeLimit
           ) {
             empData.totalEarlyDuration = addTime(
               empData.totalEarlyDuration || "00:00:00",
@@ -336,8 +411,8 @@ module.exports = function registerEndpoint(router, { services }) {
           if (
             record.lateBy !== "00:00:00" &&
             record.lateBy >
-              personalModuleMap[record.employeeId]?.config?.attendancePolicies
-                ?.setEntryTimeLimit
+            personalModuleMap[record.employeeId]?.config?.attendancePolicies
+              ?.setEntryTimeLimit
           ) {
             empData.totalLateDuration = addTime(
               empData.totalLateDuration || "00:00:00",
@@ -433,8 +508,8 @@ module.exports = function registerEndpoint(router, { services }) {
           if (
             record.workHours !== "00:00:00" &&
             record.workHours <
-              personalModuleMap[record.employeeId]?.config?.attendancePolicies
-                ?.setMinWorkingHours
+            personalModuleMap[record.employeeId]?.config?.attendancePolicies
+              ?.setMinWorkingHours
           ) {
             const workingHoursType =
               personalModuleMap[record.employeeId]?.config?.attendancePolicies

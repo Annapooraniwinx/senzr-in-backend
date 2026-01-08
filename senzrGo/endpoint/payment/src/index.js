@@ -207,7 +207,7 @@ export default (router, { services, exceptions }) => {
     try {
       // Verify webhook signature
       const webhookSignature = req.headers["x-razorpay-signature"];
-      const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+      const webhookSecret = "rJnYblhES5gguEBHxESk8KpA";
 
       const expectedSignature = crypto
         .createHmac("sha256", webhookSecret)
