@@ -2,28 +2,49 @@ export default ({ action }) => {
 
 	action('items.create', async ({ collection, payload }) => {
 
-		// ✅ Only trigger for logs collection
+		// ✅ Trigger ONLY when a record is created in logs collection
 		if (collection !== 'logs') return;
 
+		// ✅ Extract fields from the newly created log entry
+		const {
+			employeeId,
+			date,
+			timeStamp,
+			action,
+			mode,
+			tenant,
+			sn,
+		} = payload;
+
 		try {
-			await fetch('https://appv1.fieldseasy.com/function/attendance-flow', {
+			await fetch('https://appv1.fieldseasy.com/kn/attendance-flow', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
 				},
 				body: JSON.stringify({
-					employeeId: payload.employeeId,
-					date: payload.date,
-					tenant: payload.tenant,
+					employeeId,
+					date,
+					timeStamp,
+					action,
+					mode,
+					tenant,
+					sn,
 				}),
 			});
 
-			console.log(`✅ OpenFaaS triggered for collection: ${collection}`);
+			console.log('✅ OpenFaaS triggered with log data:', {
+				employeeId,
+				date,
+				timeStamp,
+				logAction,
+				mode,
+				tenant,
+				sn,
+			});
 
 		} catch (err) {
-			console.error('❌ Failed to trigger OpenFaaS:', err.message);
+			console.error('❌ Failed to trigger OpenFaaS:', err);
 		}
-
 	});
-
 };
